@@ -1,0 +1,45 @@
+# Render Blueprint for the FastAPI backend (the Next.js dashboard deploys to Vercel).
+# Render dashboard -> New -> Blueprint -> pick this repo. Values marked `sync: false` are asked for once.
+#
+# Free plan caveats: the service sleeps after 15 min without inbound HTTP (the bot loop stops with it),
+# so ping /health every 5 min from an uptime monitor; and the disk is wiped on every deploy/restart,
+# so the SQLite trade log and kill-switch state start empty. Open positions are still adopted from
+# Delta on boot (restart recovery), and their stops live on the exchange.
+services:
+  - type: web
+    name: tokeniq-backend
+    runtime: python
+    plan: free
+    region: singapore  # closest Render region to Delta India
+    rootDir: backend
+    buildCommand: pip install uv && uv sync --frozen --no-dev
+    startCommand: .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.8"
+      # Delta India TESTNET keys only (demo.delta.exchange). Never live-account keys.
+      - key: DELTA_API_KEY
+        sync: false
+      - key: DELTA_API_SECRET
+        sync: false
+      - key: DELTA_BASE_URL
+        value: https://cdn-ind.testnet.deltaex.org
+      - key: DELTA_WS_PUBLIC_URL
+        value: wss://socket-ind-pub.testnet.deltaex.org
+      - key: DELTA_WS_PRIVATE_URL
+        value: wss://socket-ind.testnet.deltaex.org
+      - key: SYMBOL
+        value: BTCUSD
+      - key: PRESET
+        value: validated
+      # Paper trading until you have checked /health; then set DRY_RUN=false for real testnet orders.
+      - key: DRY_RUN
+        value: "true"
+      # Resume the bot after every restart (free instances restart and sleep).
+      - key: AUTO_START
+        value: "true"
+      # JSON list with the Vercel URL, e.g. ["https://tokeniq-splashers.vercel.app"]
+      - key: CORS_ORIGINS
+        sync: false
