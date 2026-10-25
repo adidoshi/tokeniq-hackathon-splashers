@@ -1,11 +1,12 @@
-import { ArrowRight, ShieldCheck } from "lucide-react";
+import { ArrowRight, FlaskConical, ShieldCheck } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
 import { Panel } from "@/components/common/panel";
 import { PartnerLogos } from "@/components/common/partner-logos";
 import { SplashersMark } from "@/components/common/splashers-mark";
-import { DONE, FAIL_SAFES, FLOW, RISK_LAYERS, STRATEGY, TEAM } from "@/features/about/content";
+import { ArchitectureDiagram } from "@/features/about/architecture-diagram";
+import { BACKEND, DONE, DROPPED, FAIL_SAFES, RISK_LAYERS, STRATEGIES, TEAM } from "@/features/about/content";
 
 export const metadata: Metadata = { title: "Team Splashers · TokenIQ Desk" };
 
@@ -72,35 +73,59 @@ export default function AboutPage() {
         </ul>
       </Panel>
 
-      <Panel title="How data flows">
-        <ol className="flex flex-wrap items-center gap-2 text-xs">
-          {FLOW.map((step, i) => (
-            <li key={step} className="flex items-center gap-2">
-              <span className="rounded-xl border bg-accent-soft px-3 py-2 font-medium">{step}</span>
-              {i < FLOW.length - 1 && <ArrowRight className="size-3.5 text-muted-foreground" aria-hidden="true" />}
+      <Panel title="Architecture" aside="how a candle becomes a protected trade">
+        <ArchitectureDiagram />
+      </Panel>
+
+      <Panel title="Strategies" aside="two live-enabled, switchable from the desk">
+        <div className="grid gap-3 lg:grid-cols-2">
+          {STRATEGIES.map((s) => (
+            <article key={s.id} className="flex flex-col gap-3 rounded-2xl border p-4">
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <div>
+                  <h3 className="font-heading text-sm font-bold text-heading">{s.name}</h3>
+                  <p className="font-mono text-[10px] text-muted-foreground">{s.id}</p>
+                </div>
+                <span className="rounded-full border border-accent-line bg-accent-soft px-2.5 py-0.5 text-[10px] font-medium text-accent-text">{s.badge}</span>
+              </div>
+              <p className="text-xs text-muted-foreground">{s.thesis}</p>
+              <ul className="flex list-disc flex-col gap-1.5 pl-4 text-xs">
+                {s.rules.map((r) => <li key={r}>{r}</li>)}
+              </ul>
+              <p className="mt-auto rounded-xl border border-accent-line bg-accent-soft p-3 text-xs">{s.evidence}</p>
+            </article>
+          ))}
+        </div>
+        <p className="flex gap-2 text-xs text-muted-foreground">
+          <FlaskConical className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+          {DROPPED}
+        </p>
+      </Panel>
+
+      <Panel title="Backend" aside="Python 3.12 · FastAPI · uv">
+        <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {BACKEND.map((b) => (
+            <li key={b.title} className="flex flex-col gap-1 rounded-2xl border bg-muted/40 p-4">
+              <p className="text-sm font-semibold">{b.title}</p>
+              <p className="text-xs text-muted-foreground">{b.text}</p>
+            </li>
+          ))}
+        </ul>
+      </Panel>
+
+      <Panel title="Risk first" aside={<ShieldCheck className="size-4 text-long" />}>
+        <ol className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+          {RISK_LAYERS.map((r, i) => (
+            <li key={r} className="flex flex-col gap-1.5 rounded-xl border p-3 text-xs">
+              <span className="font-mono text-[10px] font-semibold text-accent-text">LAYER {i + 1}</span>
+              {r}
             </li>
           ))}
         </ol>
+        <div className="flex flex-wrap gap-1.5 border-t pt-3">
+          {FAIL_SAFES.map((f) => <span key={f} className="rounded-full border px-2.5 py-1 text-[10px] text-muted-foreground">{f}</span>)}
+        </div>
       </Panel>
-
-      <div className="grid gap-5 lg:grid-cols-2">
-        <Panel title={`Strategy: ${STRATEGY.name}`}>
-          <p className="text-xs text-muted-foreground">{STRATEGY.thesis}</p>
-          <ul className="flex list-disc flex-col gap-1.5 pl-4 text-xs">
-            {STRATEGY.rules.map((r) => <li key={r}>{r}</li>)}
-          </ul>
-          <p className="rounded-xl border border-accent-line bg-accent-soft p-3 text-xs">{STRATEGY.evidence}</p>
-        </Panel>
-
-        <Panel title="Risk first" aside={<ShieldCheck className="size-4 text-long" />}>
-          <ul className="flex list-disc flex-col gap-1.5 pl-4 text-xs">
-            {RISK_LAYERS.map((r) => <li key={r}>{r}</li>)}
-          </ul>
-          <div className="flex flex-wrap gap-1.5 border-t pt-3">
-            {FAIL_SAFES.map((f) => <span key={f} className="rounded-full border px-2.5 py-1 text-[10px] text-muted-foreground">{f}</span>)}
-          </div>
-        </Panel>
-      </div>
     </div>
   );
 }

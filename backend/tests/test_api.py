@@ -1,4 +1,8 @@
 """API + safety-rule tests against a fake exchange (no network)."""
+import asyncio
+import threading
+import time
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -33,6 +37,7 @@ async def client(tmp_path, monkeypatch):
     async def fake_history(symbol, resolution, days):
         return hourly_df()
     monkeypatch.setattr(routes, "_history", fake_history)
+    routes._RESULTS.clear()  # each test starts with no cached backtests
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         yield ac, engine, fake
 
@@ -146,6 +151,32 @@ async def test_compare_uses_the_params_of_the_backtest_run(client):
     assert data["commission_pct"] == 0.02
     r = await ac.post("/backtest/compare", json={"days": 60, "params": {"sma_cross_5_15": {}}})
     assert r.status_code == 400  # compare only runs the live strategies
+
+
+async def test_backtest_runs_off_the_event_loop_and_is_cached(client, monkeypatch):
+    """A slow simulation must not freeze /status (the bot loop and Render's health check share the loop)."""
+    ac, *_ = client
+    real, calls = routes.run_backtest, []
+
+    def slow_backtest(*args, **kwargs):
+        calls.append(threading.current_thread() is threading.main_thread())
+        time.sleep(0.5)
+        return real(*args, **kwargs)
+    monkeypatch.setattr(routes, "run_backtest", slow_backtest)
+
+    body = {"days": 30, "resolution": "1h"}
+    started = time.perf_counter()
+    task = asyncio.create_task(ac.post("/backtest", json=body))
+    await asyncio.sleep(0.1)  # let the backtest start (it takes at least 0.5s)
+    assert (await ac.get("/status")).status_code == 200
+    assert time.perf_counter() - started < 0.45  # answered while the backtest was still running
+    first = await task
+    assert first.status_code == 200 and calls == [False]  # ran in a worker thread, not on the loop
+
+    again = await ac.post("/backtest", json=body)
+    assert again.json() == first.json() and len(calls) == 1  # same request: served from the cache
+    await ac.post("/backtest", json={**body, "params": {"fast": 10, "slow": 30}})
+    assert len(calls) == 2  # different settings: computed again
 
 
 async def test_trend_regime_rejects_bad_ema_periods(client):

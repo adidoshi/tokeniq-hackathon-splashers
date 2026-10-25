@@ -18,7 +18,7 @@ Project-wide context, safety rules and the backend API are in [../CLAUDE.md](../
 | `/` | Live Desk (`app/page.tsx`) | KPI strip, live chart, trades, entry gate, decision log, risk guard |
 | `/replay` | Session Replay (`features/replay/`) | a past session through the live strategy + risk code, played back in the browser |
 | `/backtest` | Backtest Lab (`features/backtest/`) | 4-strategy in/out-of-sample comparison + single-strategy backtests |
-| `/about` | Team & Build (`app/about/`, copy in `features/about/content.ts`) | who built it, what is done, strategy and risk summary |
+| `/about` | Team & Build (`app/about/`, copy + diagram in `features/about/`) | who built it, what is done, architecture diagram, both live strategies, backend and risk summary |
 
 The shell (header, sidebar nav, Start/Pause/Kill) is `components/shell/app-shell.tsx`, rendered from `app/layout.tsx`.
 
