@@ -45,4 +45,4 @@ services:
         value: '["https://tokeniq-hackathon-splashers-chi.vercel.app"]'
       # every Vercel deploy URL of this project (previews get a new hash each time)
       - key: CORS_ORIGIN_REGEX
-        value: https://tokeniq-hackathon-splashers(-[a-z0-9-]+-adidoshis-projects)?\.vercel\.app
+        value: https://tokeniq-hackathon-splashers(-chi|-[a-z0-9-]+-adidoshis-projects)?\.vercel\.app

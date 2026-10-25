@@ -6,6 +6,8 @@ needs and FastAPI provides it (like middleware attaching `req.engine`).
 Rules: validate every input (400), never return another symbol's data or synthetic candles,
 and surface exchange failures as 502 with a message instead of silently falling back.
 """
+import asyncio
+import json
 import math
 import time
 from collections import OrderedDict
@@ -250,6 +252,37 @@ async def _history(symbol: str, resolution: str, days: int) -> pd.DataFrame:
     return df
 
 
+_CPU = asyncio.Semaphore(1)  # one simulation at a time: a free Render instance has 0.1 CPU and 512 MB
+_RESULTS: OrderedDict[str, tuple[float, dict]] = OrderedDict()  # finished backtests, keyed by the full request
+_RESULTS_SIZE, _RESULTS_TTL = 64, 600.0
+
+
+async def _offload(fn, *args, **kwargs):
+    """Run a CPU-heavy simulation in a worker thread, so the event loop keeps serving the bot's
+    ticks, /health and /ws while it computes (a blocked loop fails Render's health check)."""
+    async with _CPU:
+        return await asyncio.to_thread(fn, *args, **kwargs)
+
+
+def _result_key(kind: str, **parts) -> str:
+    return json.dumps([kind, parts], sort_keys=True, default=str)
+
+
+def _cached_result(key: str) -> dict | None:
+    hit = _RESULTS.get(key)
+    if hit and time.time() - hit[0] < _RESULTS_TTL:
+        _RESULTS.move_to_end(key)
+        return hit[1]
+    return None
+
+
+def _store_result(key: str, result: dict) -> dict:
+    _RESULTS[key] = (time.time(), result)
+    while len(_RESULTS) > _RESULTS_SIZE:
+        _RESULTS.popitem(last=False)
+    return result
+
+
 MAX_DAYS = {"1m": 14, "3m": 30, "5m": 60, "15m": 180, "30m": 365, "1h": 730, "2h": 730, "3h": 730, "4h": 730, "1d": 730}
 
 
@@ -313,16 +346,20 @@ async def backtest(req: BacktestRequest, engine: Engine = Depends(get_engine)):
     resolution = _check_resolution(req.resolution or "1h")
     strategy = _make_strategy(req.strategy or engine.strategy.name, req.params)
     days = _days_for(resolution, req.days)
+    comm_pct = 0.053 if req.commission_pct is None else float(req.commission_pct)
+    key = _result_key("backtest", symbol=symbol, resolution=resolution, strategy=strategy.name,
+                      params=strategy.params, days=days, equity=req.equity, commission_pct=comm_pct)
+    if (hit := _cached_result(key)) is not None:
+        return hit
     contract_value = await _contract_value(symbol, engine)
     df = await _history(symbol, resolution, days)
-    comm_pct = 0.053 if req.commission_pct is None else float(req.commission_pct)
     fee_rate = comm_pct / 100.0
-    result = run_backtest(df, strategy, RiskManager.from_settings(engine.s), req.equity,
-                          contract_value, fee_rate=fee_rate, resolution=resolution).to_dict()
+    result = (await _offload(run_backtest, df, strategy, RiskManager.from_settings(engine.s), req.equity,
+                             contract_value, fee_rate=fee_rate, resolution=resolution)).to_dict()
     result["equity_curve"] = _downsample(result["equity_curve"])
     result["trades"] = result["trades"][-100:]
     result.update(params=strategy.params, symbol=symbol, strategy=strategy.name, resolution=resolution, days=days, commission_pct=comm_pct)
-    return result
+    return _store_result(key, result)
 
 
 class CompareRequest(BaseModel):
@@ -347,21 +384,32 @@ async def compare(req: CompareRequest, engine: Engine = Depends(get_engine)):
         raise HTTPException(400, f"params given for {sorted(unknown)}; compare runs {LIVE_STRATEGIES}")
     strategies = {name: _make_strategy(name, req.params.get(name, {})) for name in LIVE_STRATEGIES}
     days = _days_for(resolution, req.days)
+    key = _result_key("compare", symbol=symbol, resolution=resolution, days=days, equity=req.equity,
+                      commission_pct=req.commission_pct, params={n: s.params for n, s in strategies.items()},
+                      custom=sorted(n for n in strategies if req.params.get(n)))
+    if (hit := _cached_result(key)) is not None:
+        return hit
     contract_value = await _contract_value(symbol, engine)
     df = await _history(symbol, resolution, days)
     cut = int(len(df) * 0.7)
-    rows = []
-    for name, strategy in strategies.items():
-        # out-of-sample gets the warmup bars before the split so its indicators start settled
-        parts = {"in_sample": df.iloc[:cut], "out_of_sample": df.iloc[max(0, cut - strategy.warmup):]}
-        row = {**describe(STRATEGIES[name]), "params": strategy.params, "custom": bool(req.params.get(name))}
-        for label, part in parts.items():
-            m = run_backtest(part, STRATEGIES[name](**strategy.params), RiskManager.from_settings(engine.s), req.equity,
-                             contract_value, fee_rate=req.commission_pct / 100.0, resolution=resolution).metrics
-            row[label] = {k: m[k] for k in METRIC_KEYS}
-        rows.append(row)
-    return {"symbol": symbol, "resolution": resolution, "days": days, "period": f"{df.index[0]} -> {df.index[-1]}",
-            "split_at": str(df.index[cut]), "commission_pct": req.commission_pct, "strategies": rows}
+
+    def run_rows() -> list[dict]:
+        rows = []
+        for name, strategy in strategies.items():
+            # out-of-sample gets the warmup bars before the split so its indicators start settled
+            parts = {"in_sample": df.iloc[:cut], "out_of_sample": df.iloc[max(0, cut - strategy.warmup):]}
+            row = {**describe(STRATEGIES[name]), "params": strategy.params, "custom": bool(req.params.get(name))}
+            for label, part in parts.items():
+                m = run_backtest(part, STRATEGIES[name](**strategy.params), RiskManager.from_settings(engine.s), req.equity,
+                                 contract_value, fee_rate=req.commission_pct / 100.0, resolution=resolution).metrics
+                row[label] = {k: m[k] for k in METRIC_KEYS}
+            rows.append(row)
+        return rows
+
+    rows = await _offload(run_rows)
+    return _store_result(key, {"symbol": symbol, "resolution": resolution, "days": days,
+                               "period": f"{df.index[0]} -> {df.index[-1]}", "split_at": str(df.index[cut]),
+                               "commission_pct": req.commission_pct, "strategies": rows})
 
 
 class ReplayRequest(BaseModel):
@@ -386,10 +434,10 @@ async def replay(req: ReplayRequest, engine: Engine = Depends(get_engine)):
     warm_days = math.ceil(cls.warmup * RESOLUTION_SECONDS[resolution] / 86400) + 1
     df = await _history(engine.s.symbol, resolution, _days_for(resolution, req.days + warm_days))
     strategy = cls()
-    result = run_backtest(df, strategy, RiskManager.from_settings(engine.s), req.equity,
-                          engine.contract_value, resolution=resolution)
+    result = await _offload(run_backtest, df, strategy, RiskManager.from_settings(engine.s), req.equity,
+                            engine.contract_value, resolution=resolution)
     window_start = df.index[-1] - timedelta(days=req.days)
-    computed = strategy.compute(df)
+    computed = await _offload(strategy.compute, df)
     window = computed[computed.index > window_start]
     trades = [t.__dict__ for t in result.trades if pd.Timestamp(t.entry_time) > window_start]
     curve = [{"time": t, "equity": v} for t, v in result.equity_curve if pd.Timestamp(t) > window_start]
