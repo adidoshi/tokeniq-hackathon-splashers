@@ -11,6 +11,7 @@ CLAUDE.md  full project context for developers and coding agents (architecture, 
 ```
 
 ## Quickstart
+
 Requires [uv](https://docs.astral.sh/uv/) (installs Python 3.12) and Node 20+.
 
 ```bash
@@ -29,20 +30,23 @@ npm run dev                 # http://localhost:3000
 ```
 
 ### Presets (`backend/.env`)
-| Setting | Meaning |
-|---|---|
-| `PRESET=validated` | trend_regime on **1h**, the backtested setting |
-| `PRESET=demo` | trend_regime on **1m** with faster entries, so trades happen during a pitch (labelled "demo speed") |
-| `DRY_RUN=true` (default) | paper trading. Set `false` to send real orders to Delta **testnet** |
-| `AUTO_START=false` (default) | the bot trades only after Start on the dashboard |
+
+| Setting                      | Meaning                                                                                             |
+| ---------------------------- | --------------------------------------------------------------------------------------------------- |
+| `PRESET=validated`           | trend_regime on **1h**, the backtested setting                                                      |
+| `PRESET=demo`                | trend_regime on **1m** with faster entries, so trades happen during a pitch (labelled "demo speed") |
+| `DRY_RUN=true` (default)     | paper trading. Set `false` to send real orders to Delta **testnet**                                 |
+| `AUTO_START=false` (default) | the bot trades only after Start on the dashboard                                                    |
 
 ## How it works
+
 ```
 Delta WS (ticks) + REST (candles, account) ─> Engine loop
    reconcile with exchange ─> daily-loss check ─> on each closed candle:
    strategy signal ─> entry gate (every condition must pass) ─> risk sizing ─> order + bracket stop on Delta
    ─> SQLite (trades, events) ─> FastAPI REST + /ws ─> dashboard
 ```
+
 - **Strategy `trend_regime`** (the only live strategy):
   - EMA 20/50 trend, traded only when ADX ≥ 20;
   - stands aside in volatility shocks;
@@ -58,17 +62,23 @@ Delta WS (ticks) + REST (candles, account) ─> Engine loop
   - strategy switch refused while a position is open.
 
 ## API
-| Method | Path | |
-|---|---|---|
-| GET | `/health`, `/status`, `/trades`, `/events`, `/api/strategies`, `/api/analytics/weekly` | state |
-| GET | `/candles?resolution=1m\|5m\|15m\|1h` | real Delta candles plus strategy indicators |
-| POST | `/bot/start`, `/bot/stop`, `/bot/kill`, `/bot/reset-kill` | controls |
-| POST | `/bot/select-strategy` | switch the live strategy (409 with a position open, 400 if not live-enabled) |
-| POST | `/backtest` · `/backtest/compare` · `/replay` | single backtest · 4-strategy comparison · session replay data |
-| WS | `/ws` | live events and a status snapshot every 2s |
+
+| Method | Path                                                                                   |                                                                              |
+| ------ | -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| GET    | `/health`, `/status`, `/trades`, `/events`, `/api/strategies`, `/api/analytics/weekly` | state                                                                        |
+| GET    | `/candles?resolution=1m\|5m\|15m\|1h`                                                  | real Delta candles plus strategy indicators                                  |
+| POST   | `/bot/start`, `/bot/stop`, `/bot/kill`, `/bot/reset-kill`                              | controls                                                                     |
+| POST   | `/bot/select-strategy`                                                                 | switch the live strategy (409 with a position open, 400 if not live-enabled) |
+| POST   | `/backtest` · `/backtest/compare` · `/replay`                                          | single backtest · 4-strategy comparison · session replay data                |
+| WS     | `/ws`                                                                                  | live events and a status snapshot every 2s                                   |
 
 ## Checks
+
 ```bash
 cd backend && uv run pytest
 cd frontend && npx tsc --noEmit && npm run lint && npm run build
 ```
+
+## Git branching
+
+- main -> develop -> feat | fix | chore | refactor -> back to develop & prod(main) merge
