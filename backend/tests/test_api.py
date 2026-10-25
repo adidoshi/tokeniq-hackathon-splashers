@@ -66,7 +66,7 @@ async def test_strategies_lists_all_and_flags_live(client):
     ac, *_ = client
     data = (await ac.get("/api/strategies")).json()
     assert {s["id"] for s in data} == {"trend_regime", "sma_cross_5_15", "stoch_sma_66", "scalping_strategy"}
-    assert [s["id"] for s in data if s["live_enabled"]] == ["trend_regime"]
+    assert set(s["id"] for s in data if s["live_enabled"]) == {"trend_regime", "stoch_sma_66"}
     assert next(s for s in data if s["id"] == "trend_regime")["active"] is True
 
 
@@ -80,6 +80,9 @@ async def test_select_strategy_rejects_backtest_only_and_bad_params(client):
     assert r.status_code == 400
     r = await ac.post("/bot/select-strategy", json={"strategy": "trend_regime", "params": {"adx_threshold": 25}})
     assert r.status_code == 200 and r.json()["params"]["adx_threshold"] == 25
+    # Switch to Stochasticate Momentum 66
+    r = await ac.post("/bot/select-strategy", json={"strategy": "stoch_sma_66", "params": {"sma_period": 66}})
+    assert r.status_code == 200 and r.json()["strategy"] == "stoch_sma_66"
 
 
 async def test_select_strategy_refused_with_open_position(client):
@@ -103,6 +106,17 @@ async def test_backtest_validates_inputs(client):
     assert (await ac.post("/backtest", json={"resolution": "1w"})).status_code == 400
     r = await ac.post("/backtest", json={"days": 30, "resolution": "1h"})
     assert r.status_code == 200 and r.json()["metrics"]["trades"] >= 1
+    r_stoch = await ac.post("/backtest", json={
+        "days": 30,
+        "resolution": "1h",
+        "strategy": "stoch_sma_66",
+        "commission_pct": 0.05,
+        "params": {"sma_period": 100},
+    })
+    assert r_stoch.status_code == 200
+    assert r_stoch.json()["strategy"] == "stoch_sma_66"
+    assert r_stoch.json()["commission_pct"] == 0.05
+    assert r_stoch.json()["params"]["sma_period"] == 100
 
 
 async def test_compare_runs_every_strategy_in_and_out_of_sample(client):
@@ -125,5 +139,5 @@ async def test_status_snapshot_is_pure_and_names_the_strategy(client):
     ac, engine, _ = client
     before = engine.risk.state.day
     s = (await ac.get("/status")).json()
-    assert s["strategy_display_name"] == "Trend regime follower" and s["available_strategies"] == ["trend_regime"]
+    assert s["strategy_display_name"] == "Trend regime follower" and set(s["available_strategies"]) == {"trend_regime", "stoch_sma_66"}
     assert engine.risk.state.day == before  # reading status must not mutate risk state

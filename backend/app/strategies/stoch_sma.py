@@ -1,25 +1,25 @@
-"""66 SMA Trend + Stochastic (14, 3) Momentum Strategy with 1:2 Risk/Reward Target.
+"""Stochasticate Momentum 66: 66 SMA Trend + Stochastic (14, 2, 3) 20/60 Levels + 4-Bar Swing Extreme SL.
 
-Rules:
-1. Long Signal:
-   - 66 Simple Moving Average is rising (SMA_66[i] > SMA_66[i-1]).
-   - Stochastic %K crosses above 35 from below (was <= 35, now > 35).
+Authoritative Rules (from Pine Script / Python Colab):
+1. Long Entry:
+   - 66 Simple Moving Average is strictly rising over ma_trend_bars (Pine v4 rising(sma(close, 66), 10)).
+   - Stochastic %K (lookback 14, smoothing 2) crosses above 20 from below (k[1] <= 20 and k > 20).
    - Trigger candle is green (close > open).
-   - Stop Loss is set at the low of the trigger candle wick.
-   - Take Profit is set at 1:2 Risk/Reward target (2.0 * stop distance).
-   - Executed on candle close / filled at next candle open.
+   - Stop Loss is placed at the lowest low of the last 4 bars (lowest_stopbars).
+   - Take Profit is placed at 1:2 Risk/Reward target (2.0 * stop distance).
+   - Fills at the next candle open with exchange bracket orders.
 
-2. Short Signal:
-   - 66 Simple Moving Average is falling (SMA_66[i] < SMA_66[i-1]).
-   - Stochastic %K crosses below 75 from above (was >= 75, now < 75).
+2. Short Entry:
+   - 66 Simple Moving Average is strictly falling over ma_trend_bars (Pine v4 falling(sma(close, 66), 10)).
+   - Stochastic %K crosses below 60 from above (k[1] >= 60 and k < 60).
    - Trigger candle is red (close < open).
-   - Stop Loss is set at the high of the trigger candle wick.
-   - Take Profit is set at 1:2 Risk/Reward target (2.0 * stop distance).
-   - Executed on candle close / filled at next candle open.
+   - Stop Loss is placed at the highest high of the last 4 bars (highest_stopbars).
+   - Take Profit is placed at 1:2 Risk/Reward target (2.0 * stop distance).
+   - Fills at the next candle open with exchange bracket orders.
 
 3. Discretionary Exit:
-   - Long exits early if 66 SMA flips from rising to falling.
-   - Short exits early if 66 SMA flips from falling to rising.
+   - Long exits early if 66 SMA flips to falling.
+   - Short exits early if 66 SMA flips to rising.
 """
 from typing import Any
 import pandas as pd
@@ -29,23 +29,33 @@ from app.strategies.base import Side, Signal, Strategy
 
 DEFAULTS = {
     "sma_period": 66,
+    "ma_trend_bars": 10,
     "k_period": 14,
+    "smooth_k": 2,
     "d_period": 3,
-    "smooth_k": 3,
-    "level_high": 75.0,
-    "level_low": 35.0,
+    "level_high": 60.0,
+    "level_low": 20.0,
+    "stopbars": 4,
     "rr_ratio": 2.0,
     "min_sl_pct": 0.0010,  # 0.10% safety floor if candle body/wick is tiny
+    "exit_on_trend_flip": False,  # False preserves full 1:2 R:R bracket targets; True exits on MA flip
 }
 
 
 class StochasticSMAStrategy(Strategy):
     name = "stoch_sma_66"
-    display_name = "66 SMA + Stochastic momentum"
-    summary = "66 SMA direction + Stochastic 14/3 crossing 35/75, stop at the trigger candle, 1:2 target"
-    live_enabled = False  # backtest evidence only: loses out of sample on every timeframe
+    display_name = "Stochasticate Momentum 66"
+    summary = "66 SMA direction + Stochastic (14, 2, 3) 20/60 levels, 4-bar swing SL, 1:2 R:R bracket"
+    live_enabled = True
     defaults = DEFAULTS
-    warmup = 75  # 66 bars for SMA + rolling slope and stochastic lookback
+    warmup = 85  # 66 SMA + 10 trend bars + 14 Stoch + 4 stopbars
+
+    def __init__(self, **params):
+        super().__init__(**params)
+        sma_p = int(self.params.get("sma_period", 66))
+        trend_b = int(self.params.get("ma_trend_bars", 10))
+        k_p = int(self.params.get("k_period", 14))
+        self.warmup = max(85, sma_p + trend_b + k_p + 5)
 
     def compute(self, df: pd.DataFrame) -> pd.DataFrame:
         p = self.params
@@ -54,15 +64,29 @@ class StochasticSMAStrategy(Strategy):
         k, d = stochastic(out, p["k_period"], p["d_period"], p["smooth_k"])
         out["stoch_k"] = k
         out["stoch_d"] = d
+        out["lowest_stopbars"] = out["low"].rolling(window=p["stopbars"]).min()
+        out["highest_stopbars"] = out["high"].rolling(window=p["stopbars"]).max()
+        diff = out["sma_66"].diff()
+        tb = p["ma_trend_bars"]
+        out["ma_rising"] = (diff > 0).rolling(window=tb).sum() == tb
+        out["ma_falling"] = (diff < 0).rolling(window=tb).sum() == tb
         return out
 
     def signal(self, df: pd.DataFrame, i: int) -> Signal:
         p = self.params
         if i < self.warmup or i < 1:
-            return Signal(Side.FLAT, "warming up indicators (needs 66 SMA + Stoch)")
+            return Signal(Side.FLAT, f"warming up indicators (needs {self.warmup} bars for SMA/Stoch)")
 
         row = df.iloc[i]
         prev_row = df.iloc[i - 1]
+
+        if (
+            pd.isna(row.get("sma_66"))
+            or pd.isna(row.get("stoch_k"))
+            or pd.isna(prev_row.get("sma_66"))
+            or pd.isna(prev_row.get("stoch_k"))
+        ):
+            return Signal(Side.FLAT, "warming up indicators (insufficient history for SMA/Stoch)")
 
         sma_now = float(row["sma_66"])
         sma_prev = float(prev_row["sma_66"])
@@ -72,11 +96,9 @@ class StochasticSMAStrategy(Strategy):
 
         close = float(row["close"])
         open_ = float(row["open"])
-        high = float(row["high"])
-        low = float(row["low"])
 
-        is_rising = sma_now > sma_prev
-        is_falling = sma_now < sma_prev
+        is_rising = bool(row["ma_rising"])
+        is_falling = bool(row["ma_falling"])
         is_green = close > open_
         is_red = close < open_
 
@@ -98,12 +120,14 @@ class StochasticSMAStrategy(Strategy):
         }
 
         # Long Signal Check:
-        # 1. 66 SMA rising
-        # 2. Stoch %K crossed above 35 from below
-        # 3. Trigger candle is green
+        # 1. 66 SMA strictly rising over ma_trend_bars
+        # 2. Stoch %K crossed above level_low (20) from below
+        # 3. Trigger candle is green (close > open)
         bullish_cross = (stoch_prev <= lvl_low) and (stoch_now > lvl_low)
         if is_rising and bullish_cross and is_green:
-            stop_distance = max(close - low, close * min_sl)
+            lowest_stop = float(row["lowest_stopbars"]) if pd.notna(row["lowest_stopbars"]) else float(row["low"])
+            raw_stop = close - lowest_stop
+            stop_distance = max(raw_stop, close * min_sl)
             tp_distance = stop_distance * rr_ratio
             stop_price = close - stop_distance
             tp_price = close + tp_distance
@@ -116,8 +140,8 @@ class StochasticSMAStrategy(Strategy):
             return Signal(
                 side=Side.LONG,
                 reason=(
-                    f"66 SMA rising + Stoch %K crossed above {lvl_low:.0f} ({stoch_prev:.1f} -> {stoch_now:.1f}) "
-                    f"on green candle (SL @ wick low ${stop_price:,.1f}, 1:{rr_ratio:.0f} TP @ ${tp_price:,.1f})"
+                    f"66 SMA rising ({p['ma_trend_bars']}b) + Stoch %K crossed above {lvl_low:.0f} ({stoch_prev:.1f} -> {stoch_now:.1f}) "
+                    f"on green candle (SL @ {p['stopbars']}-bar low ${stop_price:,.1f}, 1:{rr_ratio:.0f} TP @ ${tp_price:,.1f})"
                 ),
                 price=close,
                 stop_distance=stop_distance,
@@ -127,12 +151,14 @@ class StochasticSMAStrategy(Strategy):
             )
 
         # Short Signal Check:
-        # 1. 66 SMA falling
-        # 2. Stoch %K crossed below 75 from above
-        # 3. Trigger candle is red
+        # 1. 66 SMA strictly falling over ma_trend_bars
+        # 2. Stoch %K crossed below level_high (60) from above
+        # 3. Trigger candle is red (close < open)
         bearish_cross = (stoch_prev >= lvl_high) and (stoch_now < lvl_high)
         if is_falling and bearish_cross and is_red:
-            stop_distance = max(high - close, close * min_sl)
+            highest_stop = float(row["highest_stopbars"]) if pd.notna(row["highest_stopbars"]) else float(row["high"])
+            raw_stop = highest_stop - close
+            stop_distance = max(raw_stop, close * min_sl)
             tp_distance = stop_distance * rr_ratio
             stop_price = close + stop_distance
             tp_price = close - tp_distance
@@ -145,8 +171,8 @@ class StochasticSMAStrategy(Strategy):
             return Signal(
                 side=Side.SHORT,
                 reason=(
-                    f"66 SMA falling + Stoch %K crossed below {lvl_high:.0f} ({stoch_prev:.1f} -> {stoch_now:.1f}) "
-                    f"on red candle (SL @ wick high ${stop_price:,.1f}, 1:{rr_ratio:.0f} TP @ ${tp_price:,.1f})"
+                    f"66 SMA falling ({p['ma_trend_bars']}b) + Stoch %K crossed below {lvl_high:.0f} ({stoch_prev:.1f} -> {stoch_now:.1f}) "
+                    f"on red candle (SL @ {p['stopbars']}-bar high ${stop_price:,.1f}, 1:{rr_ratio:.0f} TP @ ${tp_price:,.1f})"
                 ),
                 price=close,
                 stop_distance=stop_distance,
@@ -157,26 +183,25 @@ class StochasticSMAStrategy(Strategy):
 
         # Awaiting setup / standing aside
         if is_rising:
-            state_desc = f"66 SMA rising (uptrend) - Stoch %K: {stoch_now:.1f} (waiting for <= {lvl_low:.0f} bounce)"
+            state_desc = f"66 SMA rising ({p['ma_trend_bars']}b uptrend) - Stoch %K: {stoch_now:.1f} (waiting for cross above {lvl_low:.0f})"
         elif is_falling:
-            state_desc = f"66 SMA falling (downtrend) - Stoch %K: {stoch_now:.1f} (waiting for >= {lvl_high:.0f} pullback)"
+            state_desc = f"66 SMA falling ({p['ma_trend_bars']}b downtrend) - Stoch %K: {stoch_now:.1f} (waiting for cross below {lvl_high:.0f})"
         else:
-            state_desc = f"66 SMA flat - Stoch %K: {stoch_now:.1f}"
+            state_desc = f"66 SMA consolidating - Stoch %K: {stoch_now:.1f}"
 
         return Signal(Side.FLAT, state_desc, price=close, indicators=ind)
 
     def should_exit(self, df: pd.DataFrame, i: int, side: Side) -> str | None:
+        if not bool(self.params.get("exit_on_trend_flip", False)):
+            return None
         if i < 1:
             return None
         row = df.iloc[i]
-        prev_row = df.iloc[i - 1]
-        sma_now = float(row["sma_66"])
-        sma_prev = float(prev_row["sma_66"])
-
-        if side == Side.LONG and sma_now < sma_prev:
-            return "66 SMA direction reversed to falling"
-        if side == Side.SHORT and sma_now > sma_prev:
-            return "66 SMA direction reversed to rising"
+        sma_p = self.params.get("sma_period", 66)
+        if side == Side.LONG and bool(row.get("ma_falling", False)):
+            return f"{sma_p} SMA trend reversed to falling"
+        if side == Side.SHORT and bool(row.get("ma_rising", False)):
+            return f"{sma_p} SMA trend reversed to rising"
         return None
 
     def get_checklist(self, df: pd.DataFrame, i: int) -> list[dict[str, Any]]:
@@ -192,17 +217,17 @@ class StochasticSMAStrategy(Strategy):
             ]
 
         p = self.params
+        sma_p = p.get("sma_period", 66)
         row = df.iloc[i]
         prev_row = df.iloc[i - 1]
         sma_now = float(row["sma_66"])
-        sma_prev = float(prev_row["sma_66"])
         stoch_now = float(row["stoch_k"])
         stoch_prev = float(prev_row["stoch_k"])
         close = float(row["close"])
         open_ = float(row["open"])
 
-        is_rising = sma_now > sma_prev
-        is_falling = sma_now < sma_prev
+        is_rising = bool(row["ma_rising"])
+        is_falling = bool(row["ma_falling"])
         is_green = close > open_
         is_red = close < open_
 
@@ -215,18 +240,20 @@ class StochasticSMAStrategy(Strategy):
         trend_met = is_rising or is_falling
         cross_met = bull_cross or bear_cross
         color_met = (is_rising and is_green) or (is_falling and is_red)
+        low_stop = float(row["lowest_stopbars"]) if pd.notna(row["lowest_stopbars"]) else float(row["low"])
+        high_stop = float(row["highest_stopbars"]) if pd.notna(row["highest_stopbars"]) else float(row["high"])
 
         return [
             {
                 "id": "sma_66_trend",
-                "title": "66 SMA Trend Filter",
-                "condition": "66 SMA is rising for longs, or falling for shorts",
+                "title": f"{sma_p} SMA Trend Filter ({p['ma_trend_bars']} bars)",
+                "condition": f"{sma_p} SMA is strictly rising for longs, or falling for shorts over {p['ma_trend_bars']} bars",
                 "met": trend_met,
-                "value": f"SMA(66): ${sma_now:,.1f} ({'Rising (+)' if is_rising else ('Falling (-)' if is_falling else 'Flat')})",
+                "value": f"SMA({sma_p}): ${sma_now:,.1f} ({'Rising (+)' if is_rising else ('Falling (-)' if is_falling else 'Consolidating')})",
             },
             {
                 "id": "stoch_reversal",
-                "title": f"Stochastic 14/3 Reversal ({lvl_low:.0f} / {lvl_high:.0f})",
+                "title": f"Stochastic (14, 2) Level Cross ({lvl_low:.0f} / {lvl_high:.0f})",
                 "condition": f"Cross above {lvl_low:.0f} for Long or below {lvl_high:.0f} for Short",
                 "met": cross_met,
                 "is_signal_bar": cross_met,
@@ -240,18 +267,17 @@ class StochasticSMAStrategy(Strategy):
                 "value": f"Candle: {'Green (Close > Open)' if is_green else ('Red (Close < Open)' if is_red else 'Doji')}",
             },
             {
-                "id": "wick_sl",
-                "title": "Wick-Based Stop Loss Boundary",
-                "condition": "SL placed at candle low wick (Long) or high wick (Short)",
+                "id": "swing_sl",
+                "title": f"{p['stopbars']}-Bar Swing Extreme SL Boundary",
+                "condition": f"SL anchored at {p['stopbars']}-bar low (Long) or {p['stopbars']}-bar high (Short)",
                 "met": True,
-                "value": f"Low Wick: ${float(row['low']):,.1f} | High Wick: ${float(row['high']):,.1f}",
+                "value": f"Low: ${low_stop:,.1f} | High: ${high_stop:,.1f}",
             },
             {
                 "id": "target_rr",
-                "title": "1:2 Risk / Reward Target",
-                "condition": f"Target mathematically placed at {p['rr_ratio']:.1f}x stop distance",
+                "title": f"1:{p['rr_ratio']:.0f} Risk / Reward Target Bracket",
+                "condition": f"Target mathematically placed at {p['rr_ratio']:.1f}x stop distance on Delta",
                 "met": True,
-                "value": "1:2 Ratio (Exchange Bracket Order)",
+                "value": f"1:{p['rr_ratio']:.0f} Ratio (Exchange Bracket Order)",
             },
         ]
-

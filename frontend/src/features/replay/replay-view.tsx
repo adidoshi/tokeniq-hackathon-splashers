@@ -27,8 +27,9 @@ const CONTEXT_BARS = 24; // start with one day on screen so the chart is never e
 const when = (iso: string) => parseTime(iso).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 
 export function ReplayView() {
+  const [strategy, setStrategy] = useState<string>("trend_regime");
   const [days, setDays] = useState<number>(7);
-  const { data, isPending, isError, error } = useReplay(days);
+  const { data, isPending, isError, error } = useReplay(days, "1h", 200, strategy);
 
   return (
     <div className="flex flex-col gap-5">
@@ -40,21 +41,32 @@ export function ReplayView() {
             signals on candle close, fills at the next open, fees, trailing stops and every risk limit.
           </p>
         </div>
-        <ToggleGroup aria-label="Session length" variant="outline" value={[String(days)]} onValueChange={(v) => v[0] && setDays(Number(v[0]))}>
-          {WINDOWS.map((d) => (
-            <ToggleGroupItem key={d} value={String(d)} className="text-xs data-pressed:bg-primary data-pressed:text-primary-foreground">
-              Last {d} days
+        <div className="flex flex-wrap items-center gap-2">
+          <ToggleGroup aria-label="Strategy" variant="outline" value={[strategy]} onValueChange={(v) => v[0] && setStrategy(v[0])}>
+            <ToggleGroupItem value="trend_regime" className="text-xs data-pressed:bg-primary data-pressed:text-primary-foreground">
+              Trade Regime Follower
             </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
+            <ToggleGroupItem value="stoch_sma_66" className="text-xs data-pressed:bg-primary data-pressed:text-primary-foreground">
+              Stochasticate Momentum 66
+            </ToggleGroupItem>
+          </ToggleGroup>
+
+          <ToggleGroup aria-label="Session length" variant="outline" value={[String(days)]} onValueChange={(v) => v[0] && setDays(Number(v[0]))}>
+            {WINDOWS.map((d) => (
+              <ToggleGroupItem key={d} value={String(d)} className="text-xs data-pressed:bg-primary data-pressed:text-primary-foreground">
+                Last {d} days
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
+        </div>
       </div>
       {isError ? (
         <Panel title="Replay unavailable"><p className="text-sm text-kill">{error.message}</p></Panel>
       ) : isPending || !data ? (
         <Skeleton className="h-[560px] rounded-2xl" />
       ) : (
-        // keyed by window: switching sessions remounts the player, resetting its clock
-        <ReplayPlayer key={days} data={data} />
+        // keyed by window and strategy: switching sessions remounts the player, resetting its clock
+        <ReplayPlayer key={`${days}-${strategy}`} data={data} />
       )}
     </div>
   );
@@ -130,7 +142,13 @@ function ReplayPlayer({ data }: { data: ReplayResult }) {
             <div className="absolute inset-y-0 left-0 rounded-full bg-secondary" style={{ width: `${(shown / total) * 100}%` }} />
           </div>
         </div>
-        <CandleChart candles={candles} markers={markers} initialBars={total} adxThreshold={Number(data.params.adx_threshold ?? 20)} />
+        <CandleChart
+          candles={candles}
+          markers={markers}
+          initialBars={total}
+          adxThreshold={Number(data.params.adx_threshold ?? 20)}
+          strategy={data.strategy}
+        />
       </Panel>
 
       {done && <SessionSummary data={data} />}
@@ -142,13 +160,13 @@ function ReplayPlayer({ data }: { data: ReplayResult }) {
           <StatTile
             label="Position"
             value={open ? <span className={cn("font-heading", SIDE_TEXT_CLASS[open.side])}>{open.side.toUpperCase()} {open.size}</span> : "FLAT"}
-            sub={open ? `Entered ${fmtPrice(open.entry)}` : "Waiting for a fresh trend"}
+            sub={open ? `Entered ${fmtPrice(open.entry)}` : "Waiting for setup confirmation"}
           />
           <EquitySpark curve={pastCurve} start={startEquity} />
         </section>
         <Panel title="What the bot did" className="flex-[1_1_320px]">
           {feed.length === 0 ? (
-            <p className="text-xs text-muted-foreground">No trades yet in this session. The bot stands aside until ADX confirms a trend.</p>
+            <p className="text-xs text-muted-foreground">No trades yet in this session. The bot stands aside until strategy conditions are met.</p>
           ) : (
             <ol className="flex flex-col">
               {feed.map((f, i) => (

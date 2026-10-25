@@ -5,10 +5,10 @@ import { useQuery } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
 import { marketService } from "@/services/market.service";
 
-export function useCandles(limit = 300, resolution?: string) {
+export function useCandles(limit = 300, resolution?: string, strategy?: string) {
   return useQuery({
-    queryKey: queryKeys.candles(limit, resolution),
-    queryFn: () => marketService.getCandles(limit, resolution),
+    queryKey: queryKeys.candles(limit, resolution, strategy),
+    queryFn: () => marketService.getCandles(limit, resolution, strategy),
     refetchInterval: 15000, // live ticks update the forming candle in between
   });
 }

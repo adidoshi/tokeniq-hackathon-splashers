@@ -28,7 +28,7 @@ export interface BotStatus {
   strategy_display_name: string;
   strategy_summary: string;
   available_strategies: string[];
-  params: Record<string, number | string>;
+  params: Record<string, number | string | boolean>;
   price: number | null;
   mark_price: number | null;
   balance: number;
@@ -90,11 +90,15 @@ export interface Candle {
   low: number;
   close: number;
   volume: number;
-  /** strategy indicator columns (present for trend_regime) */
+  /** trend_regime indicator columns */
   ema_fast?: number;
   ema_slow?: number;
   adx?: number;
   atr?: number;
+  /** stoch_sma_66 indicator columns */
+  sma_66?: number;
+  stoch_k?: number;
+  stoch_d?: number;
 }
 
 export interface Trade {
@@ -121,7 +125,8 @@ export interface BacktestRequest {
   days: number;
   resolution?: string;
   equity: number;
-  params: Record<string, number | string>;
+  commission_pct?: number;
+  params: Record<string, number | string | boolean>;
 }
 
 export interface BacktestMetrics {
@@ -156,10 +161,11 @@ export interface BacktestResult {
   strategy?: string;
   resolution?: string;
   days?: number;
+  commission_pct?: number;
   metrics: BacktestMetrics;
   trades: BacktestTrade[];
   equity_curve: { time: string; equity: number }[];
-  params: Record<string, number | string>;
+  params: Record<string, number | string | boolean>;
 }
 
 export interface ActionResult {
@@ -220,7 +226,7 @@ export interface ReplayResult {
   days: number;
   strategy: string;
   strategy_display_name: string;
-  params: Record<string, number | string>;
+  params: Record<string, number | string | boolean>;
   candles: Candle[];
   trades: BacktestTrade[];
   equity_curve: { time: string; equity: number }[];
