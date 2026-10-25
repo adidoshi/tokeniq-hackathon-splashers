@@ -40,6 +40,7 @@ interface CandleChartProps {
   /** latest traded price: updates the forming (last) candle between REST refreshes */
   liveTick?: number | null;
   adxThreshold?: number;
+  strategy?: string;
   /** bars visible when data first loads */
   initialBars?: number;
   className?: string;
@@ -49,9 +50,13 @@ interface Refs {
   chart: IChartApi;
   candle: ISeriesApi<"Candlestick">;
   volume: ISeriesApi<"Histogram">;
-  emaFast: ISeriesApi<"Line">;
-  emaSlow: ISeriesApi<"Line">;
-  adx: ISeriesApi<"Line">;
+  // trend_regime
+  emaFast?: ISeriesApi<"Line">;
+  emaSlow?: ISeriesApi<"Line">;
+  adx?: ISeriesApi<"Line">;
+  // stoch_sma_66
+  sma66?: ISeriesApi<"Line">;
+  stochK?: ISeriesApi<"Line">;
   markers: ISeriesMarkersPluginApi<Time>;
   lines: Map<string, IPriceLine>;
   prev: { len: number; first: number };
@@ -70,7 +75,8 @@ function bar(c: Candle) {
 function vol(c: Candle) {
   return { time: toTime(c.time), value: c.volume, color: c.close >= c.open ? CHART_COLORS.volumeUp : CHART_COLORS.volumeDown };
 }
-const line = (c: Candle, v: number | undefined) => (v && v > 0 ? { time: toTime(c.time), value: v } : null);
+const priceLineVal = (c: Candle, v: number | undefined) => (v != null && Number.isFinite(v) && v > 0 ? { time: toTime(c.time), value: v } : null);
+const stochLineVal = (c: Candle, v: number | undefined) => (v != null && Number.isFinite(v) && v >= 0 ? { time: toTime(c.time), value: v } : null);
 
 /**
  * TradingView lightweight-charts is imperative, so the chart is created once and data is pushed
@@ -79,17 +85,19 @@ const line = (c: Candle, v: number | undefined) => (v && v > 0 ? { time: toTime(
  */
 export function CandleChart(props: CandleChartProps) {
   const { mode, colors } = useChartColors();
-  // canvas colours are fixed at creation, so a theme switch remounts the chart
-  return <CandleChartInner key={mode} colors={colors} {...props} />;
+  // canvas colours and strategy layout are fixed at creation, so a theme switch or strategy change remounts
+  return <CandleChartInner key={`${mode}-${props.strategy ?? "trend_regime"}`} colors={colors} {...props} />;
 }
 
 function CandleChartInner({
-  candles, markers = [], priceLines = [], liveTick, adxThreshold = 20, initialBars = 120, className, colors,
+  candles, markers = [], priceLines = [], liveTick, adxThreshold = 20, strategy = "trend_regime", initialBars = 120, className, colors,
 }: CandleChartProps & { colors: ChartColors }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const refs = useRef<Refs | null>(null);
   const byTime = useRef(new Map<number, Candle>());
   const [hover, setHover] = useState<Candle | null>(null);
+
+  const isStoch = strategy === "stoch_sma_66";
 
   // 1) create once
   useEffect(() => {
@@ -114,6 +122,7 @@ function CandleChartInner({
         horzLine: { color: colors.accent, style: LineStyle.Dashed, labelBackgroundColor: colors.navy },
       },
     });
+
     const candle = chart.addSeries(CandlestickSeries, {
       upColor: colors.long, downColor: colors.short, borderVisible: false,
       wickUpColor: colors.long, wickDownColor: colors.short,
@@ -122,26 +131,59 @@ function CandleChartInner({
       priceScaleId: "volume", priceFormat: { type: "volume" }, lastValueVisible: false, priceLineVisible: false,
     });
     chart.priceScale("volume").applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
+
     const quiet = { priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false } as const;
-    const emaSlow = chart.addSeries(LineSeries, { color: colors.emaSlow, lineWidth: 2, lineStyle: LineStyle.Dashed, ...quiet });
-    const emaFast = chart.addSeries(LineSeries, { color: colors.accent, lineWidth: 2, ...quiet });
-    const adx = chart.addSeries(LineSeries, { color: colors.navy, lineWidth: 2, priceLineVisible: false }, 1);
-    adx.createPriceLine({ price: adxThreshold, color: colors.warn, lineStyle: LineStyle.Dashed, lineWidth: 1, title: `trend ≥ ${adxThreshold}` });
-    chart.panes()[1]?.setHeight(88);
+
+    let emaFast: ISeriesApi<"Line"> | undefined;
+    let emaSlow: ISeriesApi<"Line"> | undefined;
+    let adx: ISeriesApi<"Line"> | undefined;
+    let sma66: ISeriesApi<"Line"> | undefined;
+    let stochK: ISeriesApi<"Line"> | undefined;
+
+    if (isStoch) {
+      // Stochasticate Momentum 66: 66 SMA on main chart (pane 0)
+      sma66 = chart.addSeries(LineSeries, { color: colors.accent, lineWidth: 2, ...quiet });
+      // Lower pane (pane 1): Stochastic %K (14, 2)
+      stochK = chart.addSeries(LineSeries, { color: colors.long, lineWidth: 2, priceLineVisible: false }, 1);
+      // Horizontal reference lines at 60 (Upper level) and 20 (Lower level)
+      stochK.createPriceLine({
+        price: 60,
+        color: colors.short,
+        lineStyle: LineStyle.Dashed,
+        lineWidth: 1,
+        title: "Upper 60",
+      });
+      stochK.createPriceLine({
+        price: 20,
+        color: colors.long,
+        lineStyle: LineStyle.Dashed,
+        lineWidth: 1,
+        title: "Lower 20",
+      });
+      chart.panes()[1]?.setHeight(88);
+    } else {
+      // Trade Regime Follower: EMA20 & EMA50 on main chart, ADX on pane 1
+      emaSlow = chart.addSeries(LineSeries, { color: colors.emaSlow, lineWidth: 2, lineStyle: LineStyle.Dashed, ...quiet });
+      emaFast = chart.addSeries(LineSeries, { color: colors.accent, lineWidth: 2, ...quiet });
+      adx = chart.addSeries(LineSeries, { color: colors.navy, lineWidth: 2, priceLineVisible: false }, 1);
+      adx.createPriceLine({ price: adxThreshold, color: colors.warn, lineStyle: LineStyle.Dashed, lineWidth: 1, title: `trend ≥ ${adxThreshold}` });
+      chart.panes()[1]?.setHeight(88);
+    }
 
     chart.subscribeCrosshairMove((param) => {
       setHover(param.time ? byTime.current.get(Number(param.time)) ?? null : null);
     });
 
     refs.current = {
-      chart, candle, volume, emaFast, emaSlow, adx, markers: createSeriesMarkers(candle, []),
+      chart, candle, volume, emaFast, emaSlow, adx, sma66, stochK,
+      markers: createSeriesMarkers(candle, []),
       lines: new Map(), prev: { len: 0, first: 0 }, ranged: false,
     };
     return () => {
       chart.remove();
       refs.current = null;
     };
-  }, [adxThreshold, colors]);
+  }, [adxThreshold, colors, isStoch]);
 
   // 2) data: append-only updates keep the view; anything else reloads
   useEffect(() => {
@@ -149,7 +191,13 @@ function CandleChartInner({
     if (!r) return;
     byTime.current = new Map(candles.map((c) => [c.time, c]));
     if (!candles.length) {
-      [r.candle, r.volume, r.emaFast, r.emaSlow, r.adx].forEach((s) => s.setData([]));
+      r.candle.setData([]);
+      r.volume.setData([]);
+      if (r.emaFast) r.emaFast.setData([]);
+      if (r.emaSlow) r.emaSlow.setData([]);
+      if (r.adx) r.adx.setData([]);
+      if (r.sma66) r.sma66.setData([]);
+      if (r.stochK) r.stochK.setData([]);
       r.prev = { len: 0, first: 0 };
       r.ranged = false;
       return;
@@ -161,17 +209,31 @@ function CandleChartInner({
         const c = candles[i];
         r.candle.update(bar(c));
         r.volume.update(vol(c));
-        const f = line(c, c.ema_fast), s = line(c, c.ema_slow), a = line(c, c.adx);
-        if (f) r.emaFast.update(f);
-        if (s) r.emaSlow.update(s);
-        if (a) r.adx.update(a);
+        if (isStoch) {
+          const s = priceLineVal(c, c.sma_66);
+          const k = stochLineVal(c, c.stoch_k);
+          if (s && r.sma66) r.sma66.update(s);
+          if (k && r.stochK) r.stochK.update(k);
+        } else {
+          const f = priceLineVal(c, c.ema_fast);
+          const s = priceLineVal(c, c.ema_slow);
+          const a = priceLineVal(c, c.adx);
+          if (f && r.emaFast) r.emaFast.update(f);
+          if (s && r.emaSlow) r.emaSlow.update(s);
+          if (a && r.adx) r.adx.update(a);
+        }
       }
     } else {
       r.candle.setData(candles.map(bar));
       r.volume.setData(candles.map(vol));
-      r.emaFast.setData(candles.flatMap((c) => line(c, c.ema_fast) ?? []));
-      r.emaSlow.setData(candles.flatMap((c) => line(c, c.ema_slow) ?? []));
-      r.adx.setData(candles.flatMap((c) => line(c, c.adx) ?? []));
+      if (isStoch) {
+        if (r.sma66) r.sma66.setData(candles.flatMap((c) => priceLineVal(c, c.sma_66) ?? []));
+        if (r.stochK) r.stochK.setData(candles.flatMap((c) => stochLineVal(c, c.stoch_k) ?? []));
+      } else {
+        if (r.emaFast) r.emaFast.setData(candles.flatMap((c) => priceLineVal(c, c.ema_fast) ?? []));
+        if (r.emaSlow) r.emaSlow.setData(candles.flatMap((c) => priceLineVal(c, c.ema_slow) ?? []));
+        if (r.adx) r.adx.setData(candles.flatMap((c) => priceLineVal(c, c.adx) ?? []));
+      }
     }
     r.prev = { len: candles.length, first: candles[0].time };
     if (!r.ranged) {
@@ -180,7 +242,7 @@ function CandleChartInner({
       r.chart.timeScale().setVisibleLogicalRange({ from, to: Math.max(candles.length, from + initialBars) + 4 });
       r.ranged = true;
     }
-  }, [candles, initialBars]);
+  }, [candles, initialBars, isStoch]);
 
   // 3) markers
   useEffect(() => {
@@ -226,9 +288,22 @@ function CandleChartInner({
           <span>H <b className={up ? "text-long" : "text-short"}>{fmtPrice(shown.high)}</b></span>
           <span>L <b className={up ? "text-long" : "text-short"}>{fmtPrice(shown.low)}</b></span>
           <span>C <b className={up ? "text-long" : "text-short"}>{fmtPrice(liveTick && !hover ? liveTick : shown.close)}</b></span>
-          {shown.ema_fast ? <span className="text-secondary">EMA20 {fmtPrice(shown.ema_fast)}</span> : null}
-          {shown.ema_slow ? <span className="text-ema-slow">EMA50 {fmtPrice(shown.ema_slow)}</span> : null}
-          {shown.adx ? <span className="text-primary">ADX {shown.adx.toFixed(1)}</span> : null}
+          {isStoch ? (
+            <>
+              {shown.sma_66 ? <span className="text-secondary font-semibold">SMA66 {fmtPrice(shown.sma_66)}</span> : null}
+              {shown.stoch_k != null && shown.stoch_k > 0 ? (
+                <span className={cn("font-semibold", shown.stoch_k >= 60 ? "text-short" : shown.stoch_k <= 20 ? "text-long" : "text-foreground")}>
+                  Stoch %K {shown.stoch_k.toFixed(1)}
+                </span>
+              ) : null}
+            </>
+          ) : (
+            <>
+              {shown.ema_fast ? <span className="text-secondary">EMA20 {fmtPrice(shown.ema_fast)}</span> : null}
+              {shown.ema_slow ? <span className="text-ema-slow">EMA50 {fmtPrice(shown.ema_slow)}</span> : null}
+              {shown.adx ? <span className="text-primary">ADX {shown.adx.toFixed(1)}</span> : null}
+            </>
+          )}
         </div>
       )}
     </div>

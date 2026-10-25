@@ -36,7 +36,12 @@ export function BacktestView() {
         <div className="flex flex-wrap gap-2">
           <Pill>Fills at next candle open</Pill>
           <Pill>Stop checked before target</Pill>
-          <Pill>0.053% taker fee each side</Pill>
+          <Pill>
+            {result?.commission_pct !== undefined
+              ? `${result.commission_pct.toFixed(3)}% fee/side applied`
+              : "0.053% fee/side applied"}
+          </Pill>
+          {result?.resolution && <Pill tone="accent">{result.resolution} candles</Pill>}
         </div>
       </div>
 
@@ -51,6 +56,39 @@ export function BacktestView() {
             </Panel>
           ) : (
             <>
+              {result && !backtest.isPending && (
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-primary/20 bg-primary/5 px-4 py-2.5 text-xs">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-semibold text-foreground">
+                      {result.strategy === "stoch_sma_66" ? "Stochasticate Momentum 66" : "Trend Regime"}
+                    </span>
+                    <span className="text-muted-foreground">·</span>
+                    <span className="font-mono font-medium text-primary">{result.resolution}</span>
+                    <span className="text-muted-foreground">·</span>
+                    <span>{result.days} days</span>
+                    <span className="text-muted-foreground">·</span>
+                    <span>
+                      Fee: <strong className="font-mono text-foreground">{result.commission_pct ?? 0.053}%</strong>
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 font-mono text-[11px] text-muted-foreground">
+                    {result.strategy === "stoch_sma_66" ? (
+                      <>
+                        <span>MA: {result.params.sma_period ?? 66}</span>
+                        <span>%K: {result.params.k_period ?? 14} (sm: {result.params.smooth_k ?? 2})</span>
+                        <span>Levels: {result.params.level_low ?? 20}/{result.params.level_high ?? 60}</span>
+                        <span>R:R: 1:{result.params.rr_ratio ?? 2}</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>ADX: {result.params.adx_threshold ?? 20}</span>
+                        <span>ATR: {result.params.trail_atr ?? 3}x</span>
+                        <span>Mode: {result.params.entry_mode ?? "fresh"}</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
               <BacktestMetrics metrics={result?.metrics} loading={backtest.isPending} />
               {result && !backtest.isPending ? (
                 <>

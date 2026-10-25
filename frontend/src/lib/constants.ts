@@ -3,10 +3,10 @@ import type { Side } from "@/types/api";
 /** Resolutions Delta actually serves (no sub-minute history exists). Mirrors backend RESOLUTION_SECONDS. */
 export const RESOLUTION_SECONDS: Record<string, number> = {
   "1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800,
-  "1h": 3600, "2h": 7200, "4h": 14400, "6h": 21600, "1d": 86400,
+  "1h": 3600, "2h": 7200, "3h": 10800, "4h": 14400, "6h": 21600, "1d": 86400,
 };
 
-export const CHART_TIMEFRAMES = ["1m", "5m", "15m", "1h"] as const;
+export const CHART_TIMEFRAMES = ["1m", "5m", "15m", "1h", "2h", "3h", "1d"] as const;
 
 /**
  * Hex values for canvas charts (Tailwind classes can't reach them). Keep in sync with globals.css tokens.

@@ -13,4 +13,9 @@ export const botService = {
   stop: () => http.post<ActionResult>("/bot/stop"),
   kill: () => http.post<ActionResult>("/bot/kill"),
   resetKill: () => http.post<ActionResult>("/bot/reset-kill"),
+  selectStrategy: (strategy: string, params: Record<string, unknown> = {}) =>
+    http.post<{ result: string; strategy: string; params: Record<string, unknown> }>("/bot/select-strategy", {
+      strategy,
+      params,
+    }),
 };

@@ -19,10 +19,10 @@ export function useStrategyComparison(resolution = "1h", days = 365) {
   });
 }
 
-export function useReplay(days: number, resolution = "1h") {
+export function useReplay(days: number, resolution = "1h", equity = 200, strategy?: string) {
   return useQuery({
-    queryKey: queryKeys.replay(days, resolution),
-    queryFn: () => backtestService.replay(days, resolution),
+    queryKey: queryKeys.replay(days, resolution, strategy),
+    queryFn: () => backtestService.replay(days, resolution, equity, strategy),
     staleTime: 10 * 60_000,
   });
 }
