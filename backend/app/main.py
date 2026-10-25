@@ -51,7 +51,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="TokenIQ Algo Bot", lifespan=lifespan)
-app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins, allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins, allow_origin_regex=settings.cors_origin_regex,
+                   allow_methods=["*"], allow_headers=["*"])
 app.include_router(routes.router)
 app.include_router(stream.router)
 

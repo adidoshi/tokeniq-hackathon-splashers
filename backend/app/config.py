@@ -50,6 +50,8 @@ class Settings(BaseSettings):
 
     # API
     cors_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
+    # optional regex for origins that change per deploy, e.g. Vercel preview URLs
+    cors_origin_regex: str | None = None
 
     @model_validator(mode="after")
     def _apply_preset(self) -> "Settings":
