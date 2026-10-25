@@ -8,15 +8,19 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useStrategies } from "@/hooks/use-bot";
-import type { BacktestRequest } from "@/types/api";
+import { BACKTEST_SYMBOLS } from "@/lib/constants";
+import type { BacktestRequest, CompareRequest } from "@/types/api";
 
 export interface BacktestFormValues {
+  symbol: string;
   strategy: string;
   resolution: string;
   days: number;
   equity: number;
   commissionPct: number;
   // trend_regime
+  emaFast: number;
+  emaSlow: number;
   trailAtr: number;
   adxThreshold: number;
   entryMode: "fresh" | "state";
@@ -33,11 +37,14 @@ export interface BacktestFormValues {
 }
 
 export const DEFAULT_BACKTEST: BacktestFormValues = {
+  symbol: "BTCUSD",
   strategy: "trend_regime",
   resolution: "1h",
   days: 365,
   equity: 10000,
   commissionPct: 0.053,
+  emaFast: 20,
+  emaSlow: 50,
   trailAtr: 3,
   adxThreshold: 20,
   entryMode: "fresh",
@@ -56,6 +63,8 @@ export function toRequest(v: BacktestFormValues): BacktestRequest {
   let params: BacktestRequest["params"] = {};
   if (v.strategy === "trend_regime") {
     params = {
+      fast: Number(v.emaFast) || 20,
+      slow: Number(v.emaSlow) || 50,
       trail_atr: Number(v.trailAtr) || 3,
       adx_threshold: Number(v.adxThreshold) || 20,
       entry_mode: v.entryMode,
@@ -74,16 +83,29 @@ export function toRequest(v: BacktestFormValues): BacktestRequest {
     };
   }
   return {
+    symbol: v.symbol,
     strategy: v.strategy,
     days: Number(v.days) || 30,
     resolution: v.resolution,
     equity: Number(v.equity) || 10000,
-    commission_pct: Number(v.commissionPct) ?? 0.053,
+    commission_pct: Number.isFinite(v.commissionPct) && v.commissionPct >= 0 ? v.commissionPct : 0.053,
     params,
   };
 }
 
-const TIMEFRAMES = ["5m", "15m", "1h", "2h", "3h", "4h", "1d"];
+/** The in/out-of-sample table for the same run. It needs at least 30 days to split meaningfully. */
+export function toCompareRequest(v: BacktestFormValues): CompareRequest {
+  const run = toRequest(v);
+  return {
+    symbol: v.symbol,
+    resolution: v.resolution,
+    days: Math.max(30, run.days),
+    commission_pct: run.commission_pct ?? 0.053,
+    params: { [v.strategy]: run.params },
+  };
+}
+
+const TIMEFRAMES =["5m", "15m", "1h", "2h", "3h", "4h", "1d"];
 
 const COMMISSION_PRESETS = [
   { label: "0.053% (Delta)", value: 0.053 },
@@ -115,6 +137,23 @@ export function BacktestForm({ onRun, running }: Props) {
     <form onSubmit={submit} aria-label="Backtest parameters" className="flex-[1_1_320px]">
       <Panel title="Parameters">
         <div className="flex flex-col gap-1.5">
+          <span className="text-xs text-muted-foreground" id="bt-symbol-label">Asset</span>
+          <ToggleGroup
+            aria-labelledby="bt-symbol-label"
+            variant="outline"
+            value={[values.symbol]}
+            onValueChange={(v) => v[0] && set("symbol", v[0])}
+            className="grid w-full grid-cols-4"
+          >
+            {BACKTEST_SYMBOLS.map((s) => (
+              <ToggleGroupItem key={s.id} value={s.id} title={s.id} className="font-mono text-xs data-pressed:bg-primary data-pressed:text-primary-foreground">
+                {s.label}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
           <span className="text-xs text-muted-foreground" id="bt-strategy-label">Strategy</span>
           <ToggleGroup
             aria-labelledby="bt-strategy-label"
@@ -124,10 +163,9 @@ export function BacktestForm({ onRun, running }: Props) {
             onValueChange={(v) => v[0] && set("strategy", v[0])}
             className="w-full"
           >
-            {(strategies ?? []).map((st) => (
-              <ToggleGroupItem key={st.id} value={st.id} className="justify-between text-xs data-pressed:bg-primary data-pressed:text-primary-foreground">
+            {(strategies ?? []).filter((st) => st.live_enabled).map((st) => (
+              <ToggleGroupItem key={st.id} value={st.id} className="justify-start text-xs data-pressed:bg-primary data-pressed:text-primary-foreground">
                 {st.display_name}
-                <span className="text-[10px] opacity-80">{st.live_enabled ? "live" : "evidence"}</span>
               </ToggleGroupItem>
             ))}
           </ToggleGroup>
@@ -140,6 +178,7 @@ export function BacktestForm({ onRun, running }: Props) {
             variant="outline"
             value={[values.resolution]}
             onValueChange={(v) => v[0] && set("resolution", v[0])}
+            className="grid w-full grid-cols-4"
           >
             {TIMEFRAMES.map((tf) => (
               <ToggleGroupItem key={tf} value={tf} className="font-mono text-xs data-pressed:bg-foreground data-pressed:text-background">
@@ -219,6 +258,38 @@ export function BacktestForm({ onRun, running }: Props) {
           <>
             <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-1.5">
+                <Label htmlFor="bt-ema-fast" className="text-xs font-normal text-muted-foreground">Fast EMA</Label>
+                <Input
+                  id="bt-ema-fast"
+                  type="number"
+                  step={1}
+                  min={2}
+                  max={399}
+                  value={values.emaFast}
+                  onChange={(e) => set("emaFast", Number(e.target.value))}
+                  className="h-10 font-mono text-xs"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="bt-ema-slow" className="text-xs font-normal text-muted-foreground">Slow EMA</Label>
+                <Input
+                  id="bt-ema-slow"
+                  type="number"
+                  step={1}
+                  min={3}
+                  max={400}
+                  value={values.emaSlow}
+                  onChange={(e) => set("emaSlow", Number(e.target.value))}
+                  className="h-10 font-mono text-xs"
+                />
+              </div>
+              {values.emaFast >= values.emaSlow && (
+                <p className="col-span-2 text-[11px] text-kill">Fast EMA must be shorter than slow EMA.</p>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1.5">
                 <Label htmlFor="bt-trail" className="text-xs font-normal text-muted-foreground">Trailing stop (× ATR)</Label>
                 <Input
                   id="bt-trail"
@@ -253,6 +324,7 @@ export function BacktestForm({ onRun, running }: Props) {
                 variant="outline"
                 value={[values.entryMode]}
                 onValueChange={(v) => v[0] && set("entryMode", v[0] as BacktestFormValues["entryMode"])}
+                className="grid w-full grid-cols-2"
               >
                 <ToggleGroupItem value="fresh" className="data-pressed:bg-foreground data-pressed:text-background">Fresh only</ToggleGroupItem>
                 <ToggleGroupItem value="state" className="data-pressed:bg-foreground data-pressed:text-background">Any trend bar</ToggleGroupItem>
@@ -406,7 +478,7 @@ export function BacktestForm({ onRun, running }: Props) {
           </div>
         )}
 
-        <Button type="submit" size="lg" disabled={running} className="h-11 font-heading font-bold tracking-widest uppercase">
+        <Button type="submit" size="lg" disabled={running || (isTrend && values.emaFast >= values.emaSlow)} className="h-11 font-heading font-bold tracking-widest uppercase">
           {running ? "Running…" : "Run backtest"}
         </Button>
 
@@ -416,7 +488,7 @@ export function BacktestForm({ onRun, running }: Props) {
             {isStoch ? (
               `Stochasticate Momentum 66 uses ${values.stopbars}-bar swing extreme stop loss and 1:${values.rrRatio} bracket target. Fills at next candle open, with ${values.commissionPct.toFixed(3)}% taker fee accounted per side.`
             ) : (
-              `On 5m candles the stop sits about $150 away, so the round-trip fee ate half the risk on every trade. Applied commission: ${values.commissionPct.toFixed(3)}% per side.`
+              `Trend Regime trails its stop ${values.trailAtr}× ATR behind price (held on Delta as a bracket order). Fills at next candle open, with ${values.commissionPct.toFixed(3)}% taker fee accounted per side. Short timeframes lose more of each trade's risk to fees.`
             )}
           </p>
         </div>

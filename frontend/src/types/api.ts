@@ -192,6 +192,7 @@ export interface StrategyInfo {
 
 export interface CompareMetrics {
   return_pct: number;
+  buy_hold_pct: number;
   trades: number;
   win_rate_pct: number;
   profit_factor: number | null;
@@ -199,12 +200,29 @@ export interface CompareMetrics {
   max_drawdown_pct: number;
 }
 
+export interface CompareRequest {
+  symbol: string;
+  resolution: string;
+  days: number;
+  commission_pct: number;
+  /** per strategy id; strategies left out run on their defaults */
+  params: Record<string, BacktestRequest["params"]>;
+}
+
 export interface CompareResult {
   symbol: string;
   resolution: string;
   days: number;
+  period: string;
   split_at: string;
-  strategies: (Omit<StrategyInfo, "active"> & { in_sample: CompareMetrics; out_of_sample: CompareMetrics })[];
+  commission_pct: number;
+  strategies: (Omit<StrategyInfo, "active"> & {
+    params: Record<string, number | string | boolean>;
+    /** true when the row ran on the params from the backtest form */
+    custom: boolean;
+    in_sample: CompareMetrics;
+    out_of_sample: CompareMetrics;
+  })[];
 }
 
 export interface ReplaySummary {

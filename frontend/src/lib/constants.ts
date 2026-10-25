@@ -8,6 +8,14 @@ export const RESOLUTION_SECONDS: Record<string, number> = {
 
 export const CHART_TIMEFRAMES = ["1m", "5m", "15m", "1h", "2h", "3h", "1d"] as const;
 
+/** Delta India perpetuals the Backtest Lab can test. Mirrors backend BACKTEST_SYMBOLS. */
+export const BACKTEST_SYMBOLS = [
+  { id: "BTCUSD", label: "BTC" },
+  { id: "ETHUSD", label: "ETH" },
+  { id: "SOLUSD", label: "SOL" },
+  { id: "XAUTUSD", label: "XAUT" },
+] as const;
+
 /**
  * Hex values for canvas charts (Tailwind classes can't reach them). Keep in sync with globals.css tokens.
  * long / short / warn are identical in both themes so trade markers stay readable on either background;

@@ -119,11 +119,40 @@ async def test_backtest_validates_inputs(client):
     assert r_stoch.json()["params"]["sma_period"] == 100
 
 
-async def test_compare_runs_every_strategy_in_and_out_of_sample(client):
+async def test_backtest_rejects_unsupported_symbols(client):
     ac, *_ = client
+    r = await ac.post("/backtest", json={"symbol": "DOGEUSD", "resolution": "1h"})
+    assert r.status_code == 400 and "XAUTUSD" in r.json()["detail"]
+    r = await ac.post("/backtest/compare", json={"symbol": "DOGEUSD", "days": 60})
+    assert r.status_code == 400
+
+
+async def test_compare_runs_the_live_strategies_in_and_out_of_sample(client):
+    ac, engine, _ = client
     data = (await ac.post("/backtest/compare", json={"days": 60})).json()
-    assert len(data["strategies"]) == 4
+    assert [s["id"] for s in data["strategies"]] == ["trend_regime", "stoch_sma_66"]
+    assert data["symbol"] == engine.s.symbol
     assert {"in_sample", "out_of_sample"} <= data["strategies"][0].keys()
+    assert "buy_hold_pct" in data["strategies"][0]["out_of_sample"]
+
+
+async def test_compare_uses_the_params_of_the_backtest_run(client):
+    ac, *_ = client
+    data = (await ac.post("/backtest/compare", json={
+        "days": 60, "commission_pct": 0.02, "params": {"trend_regime": {"fast": 10, "slow": 30}}})).json()
+    trend, stoch = data["strategies"]
+    assert trend["custom"] is True and (trend["params"]["fast"], trend["params"]["slow"]) == (10, 30)
+    assert stoch["custom"] is False and stoch["params"]["sma_period"] == 66
+    assert data["commission_pct"] == 0.02
+    r = await ac.post("/backtest/compare", json={"days": 60, "params": {"sma_cross_5_15": {}}})
+    assert r.status_code == 400  # compare only runs the live strategies
+
+
+async def test_trend_regime_rejects_bad_ema_periods(client):
+    ac, *_ = client
+    for fast, slow in ((50, 20), (20, 20), (1, 50), (20, 500)):
+        r = await ac.post("/backtest", json={"strategy": "trend_regime", "params": {"fast": fast, "slow": slow}})
+        assert r.status_code == 400 and "EMA periods" in r.json()["detail"]
 
 
 async def test_replay_returns_a_session(client):

@@ -55,6 +55,17 @@ def test_strategy_stands_aside_in_chop():
     assert s.signal(data, len(data) - 1).side == Side.FLAT
 
 
+def test_trend_regime_ema_params_drive_indicators_and_warmup():
+    s = TrendRegimeStrategy(fast=10, slow=30)
+    assert s.warmup == 100  # floor for short EMAs
+    assert TrendRegimeStrategy(fast=50, slow=200).warmup == 400  # slow EMA needs ~2x its period
+    data = s.compute(make_df(80_000 + np.arange(300) * 10.0))
+    assert data["ema_fast"].iloc[-1] > data["ema_slow"].iloc[-1]  # rising market: fast EMA leads
+    assert data["ema_fast"].iloc[-1] == pytest.approx(data["close"].ewm(span=10, adjust=False).mean().iloc[-1])
+    with pytest.raises(ValueError, match="EMA periods"):
+        TrendRegimeStrategy(fast=50, slow=20)
+
+
 def test_backtest_profits_on_trend_and_has_no_lookahead():
     df = flat_then_trend()
     res = run_backtest(df, TrendRegimeStrategy(), risk())

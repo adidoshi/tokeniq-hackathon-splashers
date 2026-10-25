@@ -4,6 +4,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 
 import { queryKeys } from "@/lib/query-keys";
 import { backtestService } from "@/services/backtest.service";
+import type { CompareRequest } from "@/types/api";
 
 /** A single backtest is an action the user triggers, so it's a mutation rather than a query. */
 export function useBacktest() {
@@ -11,10 +12,10 @@ export function useBacktest() {
 }
 
 /** Deterministic for a given window, so cache it for the session. */
-export function useStrategyComparison(resolution = "1h", days = 365) {
+export function useStrategyComparison(req: CompareRequest) {
   return useQuery({
-    queryKey: queryKeys.compare(resolution, days),
-    queryFn: () => backtestService.compare(resolution, days),
+    queryKey: queryKeys.compare(req),
+    queryFn: () => backtestService.compare(req),
     staleTime: 10 * 60_000,
   });
 }

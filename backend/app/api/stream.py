@@ -32,5 +32,6 @@ async def ws_feed(ws: WebSocket):
     finally:
         engine.listeners.discard(queue)
         status_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
+        # a closed tab usually fails the status push first; that is a normal disconnect, not an error
+        with contextlib.suppress(asyncio.CancelledError, WebSocketDisconnect, RuntimeError):
             await status_task

@@ -32,6 +32,17 @@ class TrendRegimeStrategy(Strategy):
     choices = {"entry_mode": ("fresh", "state")}
     warmup = 100
 
+    def __init__(self, **params):
+        super().__init__(**params)
+        self.warmup = max(100, 2 * self.params["slow"])  # an EMA needs ~2x its period to settle
+
+    @classmethod
+    def validate_params(cls, params: dict) -> dict:
+        merged = super().validate_params(params)
+        if not 2 <= merged["fast"] < merged["slow"] <= 400:
+            raise ValueError(f"EMA periods need 2 <= fast < slow <= 400, got fast={merged['fast']} slow={merged['slow']}")
+        return merged
+
     def compute(self, df: pd.DataFrame) -> pd.DataFrame:
         p = self.params
         out = df.copy()
@@ -105,10 +116,10 @@ class TrendRegimeStrategy(Strategy):
             },
             {
                 "id": "ema_alignment",
-                "title": "EMA 20/50 Alignment",
-                "condition": "Price and EMA20 aligned with EMA50",
+                "title": f"EMA {p['fast']}/{p['slow']} Alignment",
+                "condition": f"Price and EMA{p['fast']} aligned with EMA{p['slow']}",
                 "met": ema_aligned,
-                "value": f"EMA20: ${fast:,.1f} | EMA50: ${slow:,.1f}",
+                "value": f"EMA{p['fast']}: ${fast:,.1f} | EMA{p['slow']}: ${slow:,.1f}",
             },
             {
                 "id": "volatility_filter",

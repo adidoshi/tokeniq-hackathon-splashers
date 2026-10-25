@@ -28,7 +28,7 @@ export const TEAM: TeamMember[] = [
 export const DONE: { title: string; text: string }[] = [
   { title: "Autonomous trading loop", text: "Polls Delta, reads each closed candle, runs the strategy, sizes the trade and places the order through the API. No manual trading." },
   { title: "Exchange-side stop on every entry", text: "Each entry carries its trailing stop as a Delta bracket order, so a crashed bot never leaves a position unprotected." },
-  { title: "Backtest and replay on real data", text: "The same strategy and risk code runs on real BTCUSD history. Signals fire on bar close, fills happen at the next open, fees are charged both sides." },
+  { title: "Backtest and replay on real data", text: "The same strategy and risk code runs on real Delta history for BTC, ETH, SOL and XAUT. Signals fire on bar close, fills happen at the next open, fees are charged both sides." },
   { title: "Live dashboard", text: "Prices, equity and the decision log update over one WebSocket. Every signal, blocked entry, order and closed trade is explained as it happens." },
   { title: "Tested without the network", text: "The test suite runs against a fake exchange, including stop fills, restart recovery and the kill switch." },
 ];
@@ -61,5 +61,5 @@ export const STRATEGY = {
     "Stand aside when ATR is more than 3× its 100-bar median",
     "Exit on a 3×ATR trailing stop held on Delta, or when the EMAs cross back",
   ],
-  evidence: "Out of sample on real BTCUSD (1h, 365 days, 70/30 split): about +1%, profit factor 1.04. Modest, and honest. The three other strategies we tested lost 27–86% out of sample, so they stay as backtest evidence only.",
+  evidence: "On real BTCUSD (1h, 365 days): about +0.7% over the full year while buy & hold fell 28%, and about +1.7% (profit factor 1.06) on the last 30% it was never tuned on. Modest, and honest. Two other strategies we tested lost heavily out of sample, so they were dropped.",
 };
