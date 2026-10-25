@@ -40,9 +40,9 @@ services:
       # Resume the bot after every restart (free instances restart and sleep).
       - key: AUTO_START
         value: "true"
-      # JSON list with the Vercel URL, e.g. ["https://tokeniq-splashers.vercel.app"]
+      # the production dashboard on Vercel
       - key: CORS_ORIGINS
-        sync: false
+        value: '["https://tokeniq-hackathon-splashers-chi.vercel.app"]'
       # every Vercel deploy URL of this project (previews get a new hash each time)
       - key: CORS_ORIGIN_REGEX
         value: https://tokeniq-hackathon-splashers(-[a-z0-9-]+-adidoshis-projects)?\.vercel\.app
