@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils";
 
 const STRATEGY_OPTIONS = [
   { id: "trend_regime", label: "Trade Regime Follower", short: "Trend Regime" },
-  { id: "stoch_sma_66", label: "Stochasticate Momentum 66", short: "Stoch 66" },
+  { id: "stoch_sma_66", label: "Strategy Guide", short: "Strategy Guide" },
 ] as const;
 
 /** Live chart of the bot's own symbol: what the strategy sees, where it traded, where its stop is. */
@@ -60,7 +60,7 @@ export function DeskChart() {
       aside={
         <div className="flex flex-wrap items-center gap-2">
           {/* Strategy Selector Toggle */}
-          <div className="flex items-center gap-1 rounded-lg border bg-muted/30 p-0.5">
+          <div className="flex items-center gap-1 rounded border border-border/80 bg-muted/40 p-0.5">
             {STRATEGY_OPTIONS.map((st) => {
               const isActive = activeStrategy === st.id;
               return (
@@ -71,10 +71,10 @@ export function DeskChart() {
                   onClick={() => handleStrategyChange(st.id)}
                   title={isPositionOpen ? "Position open: cannot switch strategy mid-trade" : st.label}
                   className={cn(
-                    "flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+                    "flex items-center gap-1.5 rounded px-2 py-0.5 text-xs font-semibold transition-colors",
                     isActive
                       ? "bg-primary text-primary-foreground shadow-xs"
-                      : "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
+                      : "text-muted-foreground hover:bg-muted/80 hover:text-foreground",
                     isPositionOpen && !isActive && "cursor-not-allowed opacity-50",
                   )}
                 >
@@ -105,16 +105,16 @@ export function DeskChart() {
       }
     >
       {isPositionOpen && (
-        <div className="flex items-center gap-2 rounded-lg border border-warn/30 bg-warn/10 px-3 py-1.5 text-xs text-warn">
+        <div className="flex items-center gap-2 rounded border border-warn/30 bg-warn/10 px-3 py-1.5 text-xs text-warn">
           <ShieldAlert className="size-4 shrink-0" />
           <span>Active position open ({pos.side.toUpperCase()}). Strategy cannot be switched until this trade closes to protect exchange-side orders.</span>
         </div>
       )}
 
       {isError ? (
-        <p className="rounded-xl border border-kill-line bg-kill-soft p-4 text-sm text-kill">{error.message}</p>
+        <p className="rounded border border-kill-line bg-kill-soft p-3 text-xs text-kill">{error.message}</p>
       ) : isPending ? (
-        <Skeleton className="h-115 rounded-xl" />
+        <Skeleton className="h-115 rounded" />
       ) : (
         <CandleChart
           candles={candles ?? []}
@@ -127,9 +127,9 @@ export function DeskChart() {
       )}
       <p className="text-xs text-muted-foreground">
         ● = bot execution timeframe.{" "}
-        {activeStrategy === "stoch_sma_66" ? (
+        {activeStrategy === "stoch_sma_66" || activeStrategy === "strategy_guide" ? (
           <>
-            <b className="text-foreground">Stochasticate Momentum 66:</b> Blue = 66 SMA on price, lower pane = Stoch %K (14, 2) with Upper 60 and Lower 20 levels (%D hidden). 4-bar extreme stop loss, 1:2 R:R bracket target.
+            <b className="text-foreground">Strategy Guide:</b> Blue = 100 SMA on price, lower pane = Stoch %K (16, 2) with Upper 60 and Lower 20 levels. 4-bar extreme swing stop loss, 1:2 R:R bracket target.
           </>
         ) : (
           <>

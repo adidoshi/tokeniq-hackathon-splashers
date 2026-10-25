@@ -165,11 +165,12 @@ class Engine:
     @staticmethod
     def _build_strategy(name: str, params: dict | None = None) -> Strategy:
         """Only strategies validated out of sample may trade; params are type-checked."""
-        if name not in STRATEGIES:
+        canonical_name = "stoch_sma_66" if name == "strategy_guide" else name
+        if canonical_name not in STRATEGIES:
             raise ValueError(f"unknown strategy '{name}'; available: {list(STRATEGIES)}")
-        if not STRATEGIES[name].live_enabled:
+        if not STRATEGIES[canonical_name].live_enabled:
             raise ValueError(f"'{name}' is backtest-only (failed out-of-sample testing); live: {LIVE_STRATEGIES}")
-        return STRATEGIES[name](**(params or {}))
+        return STRATEGIES[canonical_name](**(params or {}))
 
     def set_strategy(self, name: str, params: dict | None = None) -> None:
         """Switch strategy. Refused with a position open: its stops and exits belong to the old strategy."""

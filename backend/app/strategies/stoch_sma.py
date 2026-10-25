@@ -28,9 +28,9 @@ from app.indicators import sma, stochastic
 from app.strategies.base import Side, Signal, Strategy
 
 DEFAULTS = {
-    "sma_period": 66,
+    "sma_period": 100,
     "ma_trend_bars": 10,
-    "k_period": 14,
+    "k_period": 16,
     "smooth_k": 2,
     "d_period": 3,
     "level_high": 60.0,
@@ -44,29 +44,31 @@ DEFAULTS = {
 
 class StochasticSMAStrategy(Strategy):
     name = "stoch_sma_66"
-    display_name = "Stochasticate Momentum 66"
-    summary = "66 SMA direction + Stochastic (14, 2, 3) 20/60 levels, 4-bar swing SL, 1:2 R:R bracket"
+    display_name = "Strategy Guide"
+    summary = "100 SMA direction + Stochastic (16, 2) 20/60 levels, 4-bar swing SL, 1:2 R:R bracket"
     live_enabled = True
     defaults = DEFAULTS
-    warmup = 85  # 66 SMA + 10 trend bars + 14 Stoch + 4 stopbars
+    warmup = 130  # 100 SMA + 10 trend bars + 16 Stoch + 4 stopbars
 
     def __init__(self, **params):
         super().__init__(**params)
-        sma_p = int(self.params.get("sma_period", 66))
+        sma_p = int(self.params.get("sma_period", 100))
         trend_b = int(self.params.get("ma_trend_bars", 10))
-        k_p = int(self.params.get("k_period", 14))
-        self.warmup = max(85, sma_p + trend_b + k_p + 5)
+        k_p = int(self.params.get("k_period", 16))
+        self.warmup = max(130, sma_p + trend_b + k_p + 5)
 
     def compute(self, df: pd.DataFrame) -> pd.DataFrame:
         p = self.params
         out = df.copy()
-        out["sma_66"] = sma(out["close"], p["sma_period"])
+        sma_val = sma(out["close"], p["sma_period"])
+        out["sma_100"] = sma_val
+        out["sma_66"] = sma_val  # alias for backward compatibility
         k, d = stochastic(out, p["k_period"], p["d_period"], p["smooth_k"])
         out["stoch_k"] = k
         out["stoch_d"] = d
         out["lowest_stopbars"] = out["low"].rolling(window=p["stopbars"]).min()
         out["highest_stopbars"] = out["high"].rolling(window=p["stopbars"]).max()
-        diff = out["sma_66"].diff()
+        diff = sma_val.diff()
         tb = p["ma_trend_bars"]
         out["ma_rising"] = (diff > 0).rolling(window=tb).sum() == tb
         out["ma_falling"] = (diff < 0).rolling(window=tb).sum() == tb
@@ -80,16 +82,19 @@ class StochasticSMAStrategy(Strategy):
         row = df.iloc[i]
         prev_row = df.iloc[i - 1]
 
+        sma_now_val = row.get("sma_100", row.get("sma_66"))
+        sma_prev_val = prev_row.get("sma_100", prev_row.get("sma_66"))
+
         if (
-            pd.isna(row.get("sma_66"))
+            pd.isna(sma_now_val)
             or pd.isna(row.get("stoch_k"))
-            or pd.isna(prev_row.get("sma_66"))
+            or pd.isna(sma_prev_val)
             or pd.isna(prev_row.get("stoch_k"))
         ):
             return Signal(Side.FLAT, "warming up indicators (insufficient history for SMA/Stoch)")
 
-        sma_now = float(row["sma_66"])
-        sma_prev = float(prev_row["sma_66"])
+        sma_now = float(sma_now_val)
+        sma_prev = float(sma_prev_val)
         stoch_now = float(row["stoch_k"])
         stoch_prev = float(prev_row["stoch_k"])
         stoch_d = float(row["stoch_d"])
@@ -108,8 +113,9 @@ class StochasticSMAStrategy(Strategy):
         min_sl = float(p["min_sl_pct"])
 
         ind = {
+            "sma_100": round(sma_now, 2),
             "sma_66": round(sma_now, 2),
-            "sma_66_prev": round(sma_prev, 2),
+            "sma_period": p["sma_period"],
             "sma_trend": "RISING" if is_rising else ("FALLING" if is_falling else "FLAT"),
             "stoch_k": round(stoch_now, 2),
             "stoch_d": round(stoch_d, 2),
@@ -120,7 +126,7 @@ class StochasticSMAStrategy(Strategy):
         }
 
         # Long Signal Check:
-        # 1. 66 SMA strictly rising over ma_trend_bars
+        # 1. 100 SMA strictly rising over ma_trend_bars
         # 2. Stoch %K crossed above level_low (20) from below
         # 3. Trigger candle is green (close > open)
         bullish_cross = (stoch_prev <= lvl_low) and (stoch_now > lvl_low)
@@ -140,7 +146,7 @@ class StochasticSMAStrategy(Strategy):
             return Signal(
                 side=Side.LONG,
                 reason=(
-                    f"66 SMA rising ({p['ma_trend_bars']}b) + Stoch %K crossed above {lvl_low:.0f} ({stoch_prev:.1f} -> {stoch_now:.1f}) "
+                    f"{p['sma_period']} SMA rising ({p['ma_trend_bars']}b) + Stoch %K crossed above {lvl_low:.0f} ({stoch_prev:.1f} -> {stoch_now:.1f}) "
                     f"on green candle (SL @ {p['stopbars']}-bar low ${stop_price:,.1f}, 1:{rr_ratio:.0f} TP @ ${tp_price:,.1f})"
                 ),
                 price=close,
@@ -151,7 +157,7 @@ class StochasticSMAStrategy(Strategy):
             )
 
         # Short Signal Check:
-        # 1. 66 SMA strictly falling over ma_trend_bars
+        # 1. 100 SMA strictly falling over ma_trend_bars
         # 2. Stoch %K crossed below level_high (60) from above
         # 3. Trigger candle is red (close < open)
         bearish_cross = (stoch_prev >= lvl_high) and (stoch_now < lvl_high)
@@ -171,7 +177,7 @@ class StochasticSMAStrategy(Strategy):
             return Signal(
                 side=Side.SHORT,
                 reason=(
-                    f"66 SMA falling ({p['ma_trend_bars']}b) + Stoch %K crossed below {lvl_high:.0f} ({stoch_prev:.1f} -> {stoch_now:.1f}) "
+                    f"{p['sma_period']} SMA falling ({p['ma_trend_bars']}b) + Stoch %K crossed below {lvl_high:.0f} ({stoch_prev:.1f} -> {stoch_now:.1f}) "
                     f"on red candle (SL @ {p['stopbars']}-bar high ${stop_price:,.1f}, 1:{rr_ratio:.0f} TP @ ${tp_price:,.1f})"
                 ),
                 price=close,
@@ -183,11 +189,11 @@ class StochasticSMAStrategy(Strategy):
 
         # Awaiting setup / standing aside
         if is_rising:
-            state_desc = f"66 SMA rising ({p['ma_trend_bars']}b uptrend) - Stoch %K: {stoch_now:.1f} (waiting for cross above {lvl_low:.0f})"
+            state_desc = f"{p['sma_period']} SMA rising ({p['ma_trend_bars']}b uptrend) - Stoch %K: {stoch_now:.1f} (waiting for cross above {lvl_low:.0f})"
         elif is_falling:
-            state_desc = f"66 SMA falling ({p['ma_trend_bars']}b downtrend) - Stoch %K: {stoch_now:.1f} (waiting for cross below {lvl_high:.0f})"
+            state_desc = f"{p['sma_period']} SMA falling ({p['ma_trend_bars']}b downtrend) - Stoch %K: {stoch_now:.1f} (waiting for cross below {lvl_high:.0f})"
         else:
-            state_desc = f"66 SMA consolidating - Stoch %K: {stoch_now:.1f}"
+            state_desc = f"{p['sma_period']} SMA consolidating - Stoch %K: {stoch_now:.1f}"
 
         return Signal(Side.FLAT, state_desc, price=close, indicators=ind)
 
@@ -197,7 +203,7 @@ class StochasticSMAStrategy(Strategy):
         if i < 1:
             return None
         row = df.iloc[i]
-        sma_p = self.params.get("sma_period", 66)
+        sma_p = self.params.get("sma_period", 100)
         if side == Side.LONG and bool(row.get("ma_falling", False)):
             return f"{sma_p} SMA trend reversed to falling"
         if side == Side.SHORT and bool(row.get("ma_rising", False)):
@@ -217,10 +223,10 @@ class StochasticSMAStrategy(Strategy):
             ]
 
         p = self.params
-        sma_p = p.get("sma_period", 66)
+        sma_p = p.get("sma_period", 100)
         row = df.iloc[i]
         prev_row = df.iloc[i - 1]
-        sma_now = float(row["sma_66"])
+        sma_now = float(row.get("sma_100", row.get("sma_66", 0.0)))
         stoch_now = float(row["stoch_k"])
         stoch_prev = float(prev_row["stoch_k"])
         close = float(row["close"])
@@ -245,7 +251,7 @@ class StochasticSMAStrategy(Strategy):
 
         return [
             {
-                "id": "sma_66_trend",
+                "id": "sma_trend",
                 "title": f"{sma_p} SMA Trend Filter ({p['ma_trend_bars']} bars)",
                 "condition": f"{sma_p} SMA is strictly rising for longs, or falling for shorts over {p['ma_trend_bars']} bars",
                 "met": trend_met,
@@ -253,7 +259,7 @@ class StochasticSMAStrategy(Strategy):
             },
             {
                 "id": "stoch_reversal",
-                "title": f"Stochastic (14, 2) Level Cross ({lvl_low:.0f} / {lvl_high:.0f})",
+                "title": f"Stochastic ({p['k_period']}, {p['smooth_k']}) Level Cross ({lvl_low:.0f} / {lvl_high:.0f})",
                 "condition": f"Cross above {lvl_low:.0f} for Long or below {lvl_high:.0f} for Short",
                 "met": cross_met,
                 "is_signal_bar": cross_met,

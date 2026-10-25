@@ -6,31 +6,53 @@ import { cn } from "@/lib/utils";
 import type { BacktestTrade } from "@/types/api";
 
 export function BacktestTrades({ trades }: { trades: BacktestTrade[] }) {
-  const rows = [...trades].reverse().slice(0, 25);
+  const rows = [...trades].reverse().slice(0, 30);
   return (
-    <Panel title="Trades" aside={`Latest ${rows.length} of the run · UTC`}>
-      <Table className="min-w-[680px]">
-        <TableHeader>
-          <TableRow>
-            {["Opened", "Side", "Size", "Entry → Exit", "Closed by", "P&L", "R"].map((h, i) => (
-              <TableHead key={h} className={cn("eyebrow", i >= 2 && i !== 4 && "text-right")}>{h}</TableHead>
-            ))}
-          </TableRow>
-        </TableHeader>
-        <TableBody className="tabular font-mono text-xs">
-          {rows.map((t) => (
-            <TableRow key={t.entry_time}>
-              <TableCell>{fmtDateTime(t.entry_time)}</TableCell>
-              <TableCell className={SIDE_TEXT_CLASS[t.side]}>{t.side === "long" ? "▲ LONG" : "▼ SHORT"}</TableCell>
-              <TableCell className="text-right">{t.size}</TableCell>
-              <TableCell className="text-right">{fmtPrice(t.entry)} → {fmtPrice(t.exit)}</TableCell>
-              <TableCell className="font-sans text-[13px] text-muted-foreground">{humanize(t.exit_reason)}</TableCell>
-              <TableCell className={cn("text-right", t.pnl >= 0 ? "text-long" : "text-short")}>{fmtUsd(t.pnl, { signed: true })}</TableCell>
-              <TableCell className="text-right">{fmtR(t.r_multiple)}</TableCell>
+    <Panel title="Simulated Trade Blotter" aside={`Latest ${rows.length} executions · UTC`}>
+      <div className="overflow-x-auto rounded border border-border/60">
+        <Table className="min-w-[680px]">
+          <TableHeader className="bg-muted/30">
+            <TableRow className="border-b border-border/60 hover:bg-transparent">
+              {["Timestamp", "Side", "Size", "Entry → Exit", "Exit Catalyst", "Net P&L", "R Multiple"].map((h, i) => (
+                <TableHead
+                  key={h}
+                  className={cn(
+                    "h-8 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground",
+                    i >= 2 && i !== 4 && "text-right"
+                  )}
+                >
+                  {h}
+                </TableHead>
+              ))}
             </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+          </TableHeader>
+          <TableBody className="tabular font-mono text-xs divide-y divide-border/30">
+            {rows.map((t) => (
+              <TableRow key={t.entry_time} className="transition-colors hover:bg-muted/40">
+                <TableCell className="text-muted-foreground py-2">{fmtDateTime(t.entry_time)}</TableCell>
+                <TableCell className={cn("font-bold", SIDE_TEXT_CLASS[t.side])}>
+                  {t.side === "long" ? "LONG" : "SHORT"}
+                </TableCell>
+                <TableCell className="text-right text-foreground">{t.size}</TableCell>
+                <TableCell className="text-right">
+                  <span className="text-foreground">{fmtPrice(t.entry)}</span>
+                  <span className="text-muted-foreground mx-1">→</span>
+                  <span className="text-foreground">{fmtPrice(t.exit)}</span>
+                </TableCell>
+                <TableCell className="font-sans text-[11px] text-muted-foreground">
+                  {humanize(t.exit_reason)}
+                </TableCell>
+                <TableCell className={cn("text-right font-bold", t.pnl >= 0 ? "text-long" : "text-short")}>
+                  {fmtUsd(t.pnl, { signed: true })}
+                </TableCell>
+                <TableCell className={cn("text-right font-semibold", t.r_multiple > 0 ? "text-long" : t.r_multiple < 0 ? "text-short" : "text-foreground")}>
+                  {fmtR(t.r_multiple)}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
     </Panel>
   );
 }

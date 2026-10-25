@@ -97,7 +97,7 @@ function CandleChartInner({
   const byTime = useRef(new Map<number, Candle>());
   const [hover, setHover] = useState<Candle | null>(null);
 
-  const isStoch = strategy === "stoch_sma_66";
+  const isStoch = strategy === "stoch_sma_66" || strategy === "strategy_guide";
 
   // 1) create once
   useEffect(() => {
@@ -210,7 +210,7 @@ function CandleChartInner({
         r.candle.update(bar(c));
         r.volume.update(vol(c));
         if (isStoch) {
-          const s = priceLineVal(c, c.sma_66);
+          const s = priceLineVal(c, c.sma_100 ?? c.sma_66);
           const k = stochLineVal(c, c.stoch_k);
           if (s && r.sma66) r.sma66.update(s);
           if (k && r.stochK) r.stochK.update(k);
@@ -227,7 +227,7 @@ function CandleChartInner({
       r.candle.setData(candles.map(bar));
       r.volume.setData(candles.map(vol));
       if (isStoch) {
-        if (r.sma66) r.sma66.setData(candles.flatMap((c) => priceLineVal(c, c.sma_66) ?? []));
+        if (r.sma66) r.sma66.setData(candles.flatMap((c) => priceLineVal(c, c.sma_100 ?? c.sma_66) ?? []));
         if (r.stochK) r.stochK.setData(candles.flatMap((c) => stochLineVal(c, c.stoch_k) ?? []));
       } else {
         if (r.emaFast) r.emaFast.setData(candles.flatMap((c) => priceLineVal(c, c.ema_fast) ?? []));
@@ -290,7 +290,7 @@ function CandleChartInner({
           <span>C <b className={up ? "text-long" : "text-short"}>{fmtPrice(liveTick && !hover ? liveTick : shown.close)}</b></span>
           {isStoch ? (
             <>
-              {shown.sma_66 ? <span className="text-secondary font-semibold">SMA66 {fmtPrice(shown.sma_66)}</span> : null}
+              {(shown.sma_100 ?? shown.sma_66) ? <span className="text-secondary font-semibold">SMA100 {fmtPrice(shown.sma_100 ?? shown.sma_66)}</span> : null}
               {shown.stoch_k != null && shown.stoch_k > 0 ? (
                 <span className={cn("font-semibold", shown.stoch_k >= 60 ? "text-short" : shown.stoch_k <= 20 ? "text-long" : "text-foreground")}>
                   Stoch %K {shown.stoch_k.toFixed(1)}

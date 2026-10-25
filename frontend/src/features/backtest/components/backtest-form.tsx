@@ -41,8 +41,8 @@ export const DEFAULT_BACKTEST: BacktestFormValues = {
   trailAtr: 3,
   adxThreshold: 20,
   entryMode: "fresh",
-  smaPeriod: 66,
-  kPeriod: 14,
+  smaPeriod: 100,
+  kPeriod: 16,
   smoothK: 2,
   dPeriod: 3,
   levelHigh: 60,
@@ -62,8 +62,8 @@ export function toRequest(v: BacktestFormValues): BacktestRequest {
     };
   } else if (v.strategy === "stoch_sma_66") {
     params = {
-      sma_period: Number(v.smaPeriod) || 66,
-      k_period: Number(v.kPeriod) || 14,
+      sma_period: Number(v.smaPeriod) || 100,
+      k_period: Number(v.kPeriod) || 16,
       smooth_k: Number(v.smoothK) || 2,
       d_period: Number(v.dPeriod) || 3,
       level_high: Number(v.levelHigh) || 60,
@@ -113,9 +113,11 @@ export function BacktestForm({ onRun, running }: Props) {
 
   return (
     <form onSubmit={submit} aria-label="Backtest parameters" className="flex-[1_1_320px]">
-      <Panel title="Parameters">
+      <Panel title="Simulation Parameters">
         <div className="flex flex-col gap-1.5">
-          <span className="text-xs text-muted-foreground" id="bt-strategy-label">Strategy</span>
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground" id="bt-strategy-label">
+            Model Selection
+          </span>
           <ToggleGroup
             aria-labelledby="bt-strategy-label"
             variant="outline"
@@ -125,33 +127,48 @@ export function BacktestForm({ onRun, running }: Props) {
             className="w-full"
           >
             {(strategies ?? []).map((st) => (
-              <ToggleGroupItem key={st.id} value={st.id} className="justify-between text-xs data-pressed:bg-primary data-pressed:text-primary-foreground">
-                {st.display_name}
-                <span className="text-[10px] opacity-80">{st.live_enabled ? "live" : "evidence"}</span>
+              <ToggleGroupItem
+                key={st.id}
+                value={st.id}
+                className="justify-between text-xs font-medium rounded data-pressed:bg-primary data-pressed:text-primary-foreground"
+              >
+                <span>{st.display_name}</span>
+                <span className="font-mono text-[9px] uppercase tracking-wider opacity-75">
+                  {st.live_enabled ? "Live" : "Evidence"}
+                </span>
               </ToggleGroupItem>
             ))}
           </ToggleGroup>
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <span className="text-xs text-muted-foreground" id="bt-tf-label">Timeframe</span>
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground" id="bt-tf-label">
+            Resolution
+          </span>
           <ToggleGroup
             aria-labelledby="bt-tf-label"
             variant="outline"
+            size="sm"
             value={[values.resolution]}
             onValueChange={(v) => v[0] && set("resolution", v[0])}
           >
             {TIMEFRAMES.map((tf) => (
-              <ToggleGroupItem key={tf} value={tf} className="font-mono text-xs data-pressed:bg-foreground data-pressed:text-background">
+              <ToggleGroupItem
+                key={tf}
+                value={tf}
+                className="font-mono text-xs rounded data-pressed:bg-primary data-pressed:text-primary-foreground"
+              >
                 {tf}
               </ToggleGroupItem>
             ))}
           </ToggleGroup>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="bt-days" className="text-xs font-normal text-muted-foreground">History (days)</Label>
+        <div className="grid grid-cols-2 gap-2.5">
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="bt-days" className="text-[11px] font-medium text-muted-foreground">
+              History Window (Days)
+            </Label>
             <Input
               id="bt-days"
               type="number"
@@ -160,11 +177,13 @@ export function BacktestForm({ onRun, running }: Props) {
               max={730}
               value={values.days}
               onChange={(e) => set("days", Number(e.target.value))}
-              className="h-10 font-mono text-xs"
+              className="h-8 font-mono text-xs rounded"
             />
           </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="bt-equity" className="text-xs font-normal text-muted-foreground">Starting equity ($)</Label>
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="bt-equity" className="text-[11px] font-medium text-muted-foreground">
+              Starting Capital ($)
+            </Label>
             <Input
               id="bt-equity"
               type="number"
@@ -173,18 +192,18 @@ export function BacktestForm({ onRun, running }: Props) {
               max={100000}
               value={values.equity}
               onChange={(e) => set("equity", Number(e.target.value))}
-              className="h-10 font-mono text-xs"
+              className="h-8 font-mono text-xs rounded"
             />
           </div>
         </div>
 
         {/* Commission Fee Section */}
-        <div className="flex flex-col gap-2 rounded-xl border border-border/40 bg-surface/50 p-3">
+        <div className="flex flex-col gap-2 rounded border border-border/70 bg-muted/20 p-2.5">
           <div className="flex items-center justify-between">
-            <Label htmlFor="bt-commission" className="text-xs font-normal text-muted-foreground">
-              Taker Fee (% per side)
+            <Label htmlFor="bt-commission" className="text-[11px] font-semibold text-muted-foreground uppercase">
+              Taker Fee (% Per Fill)
             </Label>
-            <span className="font-mono text-xs font-semibold text-primary">
+            <span className="font-mono text-xs font-bold text-primary">
               {values.commissionPct.toFixed(3)}%
             </span>
           </div>
@@ -196,16 +215,16 @@ export function BacktestForm({ onRun, running }: Props) {
             max={2}
             value={values.commissionPct}
             onChange={(e) => set("commissionPct", Number(e.target.value))}
-            className="h-9 font-mono text-xs"
+            className="h-8 font-mono text-xs rounded"
           />
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap gap-1">
             {COMMISSION_PRESETS.map((preset) => (
               <Button
                 key={preset.value}
                 type="button"
                 variant={values.commissionPct === preset.value ? "secondary" : "outline"}
                 size="sm"
-                className="h-6 px-2 text-[10px] font-mono"
+                className="h-6 px-2 text-[10px] font-mono rounded"
                 onClick={() => set("commissionPct", preset.value)}
               >
                 {preset.label}
@@ -216,10 +235,13 @@ export function BacktestForm({ onRun, running }: Props) {
 
         {/* Strategy-Specific Parameters */}
         {isTrend && (
-          <>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="bt-trail" className="text-xs font-normal text-muted-foreground">Trailing stop (× ATR)</Label>
+          <div className="flex flex-col gap-2.5 rounded border border-border/70 bg-muted/20 p-2.5">
+            <span className="text-[10px] font-bold tracking-wider text-muted-foreground uppercase">
+              Trend Regime Hyperparameters
+            </span>
+            <div className="grid grid-cols-2 gap-2.5">
+              <div className="flex flex-col gap-1">
+                <Label htmlFor="bt-trail" className="text-[11px] text-muted-foreground">Trailing Stop (× ATR)</Label>
                 <Input
                   id="bt-trail"
                   type="number"
@@ -228,11 +250,11 @@ export function BacktestForm({ onRun, running }: Props) {
                   max={10}
                   value={values.trailAtr}
                   onChange={(e) => set("trailAtr", Number(e.target.value))}
-                  className="h-10 font-mono text-xs"
+                  className="h-8 font-mono text-xs rounded"
                 />
               </div>
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="bt-adx" className="text-xs font-normal text-muted-foreground">ADX threshold</Label>
+              <div className="flex flex-col gap-1">
+                <Label htmlFor="bt-adx" className="text-[11px] text-muted-foreground">ADX Floor</Label>
                 <Input
                   id="bt-adx"
                   type="number"
@@ -241,36 +263,43 @@ export function BacktestForm({ onRun, running }: Props) {
                   max={60}
                   value={values.adxThreshold}
                   onChange={(e) => set("adxThreshold", Number(e.target.value))}
-                  className="h-10 font-mono text-xs"
+                  className="h-8 font-mono text-xs rounded"
                 />
               </div>
             </div>
 
-            <div className="flex flex-col gap-1.5">
-              <span className="text-xs text-muted-foreground" id="bt-mode-label">Entry mode</span>
+            <div className="flex flex-col gap-1">
+              <span className="text-[11px] text-muted-foreground" id="bt-mode-label">Entry Mode</span>
               <ToggleGroup
                 aria-labelledby="bt-mode-label"
                 variant="outline"
+                size="sm"
                 value={[values.entryMode]}
                 onValueChange={(v) => v[0] && set("entryMode", v[0] as BacktestFormValues["entryMode"])}
               >
-                <ToggleGroupItem value="fresh" className="data-pressed:bg-foreground data-pressed:text-background">Fresh only</ToggleGroupItem>
-                <ToggleGroupItem value="state" className="data-pressed:bg-foreground data-pressed:text-background">Any trend bar</ToggleGroupItem>
+                <ToggleGroupItem value="fresh" className="text-xs font-mono rounded data-pressed:bg-primary data-pressed:text-primary-foreground">
+                  Fresh State Only
+                </ToggleGroupItem>
+                <ToggleGroupItem value="state" className="text-xs font-mono rounded data-pressed:bg-primary data-pressed:text-primary-foreground">
+                  Any Trend Bar
+                </ToggleGroupItem>
               </ToggleGroup>
             </div>
-          </>
+          </div>
         )}
 
         {isStoch && (
-          <div className="flex flex-col gap-3 rounded-xl border border-accent/20 bg-accent/5 p-3">
+          <div className="flex flex-col gap-2.5 rounded border border-primary/30 bg-primary/5 p-2.5">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-primary">Stochasticate Parameters</span>
+              <span className="text-[10px] font-bold tracking-wider text-primary uppercase">
+                Strategy Guide Hyperparameters
+              </span>
               <div className="flex gap-1">
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="h-6 px-2 text-[10px]"
+                  className="h-5 px-1.5 text-[9px] font-mono rounded"
                   onClick={() =>
                     setValues((v) => ({
                       ...v,
@@ -291,7 +320,7 @@ export function BacktestForm({ onRun, running }: Props) {
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="h-6 px-2 text-[10px]"
+                  className="h-5 px-1.5 text-[9px] font-mono rounded"
                   onClick={() =>
                     setValues((v) => ({
                       ...v,
@@ -310,9 +339,9 @@ export function BacktestForm({ onRun, running }: Props) {
                 </Button>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-2">
               <div className="flex flex-col gap-1">
-                <Label htmlFor="bt-sma" className="text-[11px] text-muted-foreground">Moving Average Period</Label>
+                <Label htmlFor="bt-sma" className="text-[10px] text-muted-foreground uppercase">SMA Lookback</Label>
                 <Input
                   id="bt-sma"
                   type="number"
@@ -321,11 +350,11 @@ export function BacktestForm({ onRun, running }: Props) {
                   max={300}
                   value={values.smaPeriod}
                   onChange={(e) => set("smaPeriod", Number(e.target.value))}
-                  className="h-9 font-mono text-xs"
+                  className="h-8 font-mono text-xs rounded"
                 />
               </div>
               <div className="flex flex-col gap-1">
-                <Label htmlFor="bt-rr" className="text-[11px] text-muted-foreground">Risk:Reward Ratio</Label>
+                <Label htmlFor="bt-rr" className="text-[10px] text-muted-foreground uppercase">Bracket R:R Target</Label>
                 <Input
                   id="bt-rr"
                   type="number"
@@ -334,11 +363,11 @@ export function BacktestForm({ onRun, running }: Props) {
                   max={5}
                   value={values.rrRatio}
                   onChange={(e) => set("rrRatio", Number(e.target.value))}
-                  className="h-9 font-mono text-xs"
+                  className="h-8 font-mono text-xs rounded"
                 />
               </div>
               <div className="flex flex-col gap-1">
-                <Label htmlFor="bt-k-len" className="text-[11px] text-muted-foreground">%K Lookback</Label>
+                <Label htmlFor="bt-k-len" className="text-[10px] text-muted-foreground uppercase">%K Lookback</Label>
                 <Input
                   id="bt-k-len"
                   type="number"
@@ -347,11 +376,11 @@ export function BacktestForm({ onRun, running }: Props) {
                   max={50}
                   value={values.kPeriod}
                   onChange={(e) => set("kPeriod", Number(e.target.value))}
-                  className="h-9 font-mono text-xs"
+                  className="h-8 font-mono text-xs rounded"
                 />
               </div>
               <div className="flex flex-col gap-1">
-                <Label htmlFor="bt-k-smooth" className="text-[11px] text-muted-foreground">%K Smoothing</Label>
+                <Label htmlFor="bt-k-smooth" className="text-[10px] text-muted-foreground uppercase">%K Smoothing</Label>
                 <Input
                   id="bt-k-smooth"
                   type="number"
@@ -360,11 +389,11 @@ export function BacktestForm({ onRun, running }: Props) {
                   max={10}
                   value={values.smoothK}
                   onChange={(e) => set("smoothK", Number(e.target.value))}
-                  className="h-9 font-mono text-xs"
+                  className="h-8 font-mono text-xs rounded"
                 />
               </div>
               <div className="flex flex-col gap-1">
-                <Label htmlFor="bt-lvl-high" className="text-[11px] text-muted-foreground">Upper Level (Short)</Label>
+                <Label htmlFor="bt-lvl-high" className="text-[10px] text-muted-foreground uppercase">Upper Level</Label>
                 <Input
                   id="bt-lvl-high"
                   type="number"
@@ -373,11 +402,11 @@ export function BacktestForm({ onRun, running }: Props) {
                   max={90}
                   value={values.levelHigh}
                   onChange={(e) => set("levelHigh", Number(e.target.value))}
-                  className="h-9 font-mono text-xs"
+                  className="h-8 font-mono text-xs rounded"
                 />
               </div>
               <div className="flex flex-col gap-1">
-                <Label htmlFor="bt-lvl-low" className="text-[11px] text-muted-foreground">Lower Level (Long)</Label>
+                <Label htmlFor="bt-lvl-low" className="text-[10px] text-muted-foreground uppercase">Lower Level</Label>
                 <Input
                   id="bt-lvl-low"
                   type="number"
@@ -386,11 +415,11 @@ export function BacktestForm({ onRun, running }: Props) {
                   max={50}
                   value={values.levelLow}
                   onChange={(e) => set("levelLow", Number(e.target.value))}
-                  className="h-9 font-mono text-xs"
+                  className="h-8 font-mono text-xs rounded"
                 />
               </div>
               <div className="col-span-2 flex flex-col gap-1">
-                <Label htmlFor="bt-stopbars" className="text-[11px] text-muted-foreground">SL Lookback Bars (Swing Extreme)</Label>
+                <Label htmlFor="bt-stopbars" className="text-[10px] text-muted-foreground uppercase">Swing Extreme SL Bars</Label>
                 <Input
                   id="bt-stopbars"
                   type="number"
@@ -399,27 +428,26 @@ export function BacktestForm({ onRun, running }: Props) {
                   max={20}
                   value={values.stopbars}
                   onChange={(e) => set("stopbars", Number(e.target.value))}
-                  className="h-9 font-mono text-xs"
+                  className="h-8 font-mono text-xs rounded"
                 />
               </div>
             </div>
           </div>
         )}
 
-        <Button type="submit" size="lg" disabled={running} className="h-11 font-heading font-bold tracking-widest uppercase">
-          {running ? "Running…" : "Run backtest"}
+        <Button
+          type="submit"
+          disabled={running}
+          className="h-9 w-full rounded font-heading text-xs font-bold tracking-wider uppercase bg-primary text-primary-foreground hover:bg-primary/90"
+        >
+          {running ? "Simulating…" : "Run Simulation"}
         </Button>
 
-        <div className="flex flex-col gap-2 border-t pt-3.5">
-          <span className="eyebrow text-warn">Fee &amp; Execution Note</span>
-          <p className="text-[13px] leading-relaxed text-body-soft">
-            {isStoch ? (
-              `Stochasticate Momentum 66 uses ${values.stopbars}-bar swing extreme stop loss and 1:${values.rrRatio} bracket target. Fills at next candle open, with ${values.commissionPct.toFixed(3)}% taker fee accounted per side.`
-            ) : (
-              `On 5m candles the stop sits about $150 away, so the round-trip fee ate half the risk on every trade. Applied commission: ${values.commissionPct.toFixed(3)}% per side.`
-            )}
-          </p>
-        </div>
+        <p className="border-t border-border/40 pt-2 text-[11px] text-muted-foreground leading-relaxed">
+          {isStoch
+            ? `Strategy Guide uses ${values.stopbars}-bar swing stop loss and 1:${values.rrRatio} bracket target. Next-bar open execution, ${values.commissionPct.toFixed(3)}% taker fee accounted per fill.`
+            : `Fills at next candle open, with stop loss verified before profit target intrabar. Applied fee: ${values.commissionPct.toFixed(3)}% per side.`}
+        </p>
       </Panel>
     </form>
   );

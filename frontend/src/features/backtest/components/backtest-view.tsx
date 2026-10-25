@@ -17,65 +17,66 @@ export function BacktestView() {
   const { mutate } = backtest;
   const run = (values: BacktestFormValues) => mutate(toRequest(values));
 
-  // open with a real result instead of an empty page
   useEffect(() => {
     mutate(toRequest(DEFAULT_BACKTEST));
   }, [mutate]);
 
   const result = backtest.data;
   return (
-    <div className="flex flex-col gap-5">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div className="flex flex-col gap-1.5">
-          <h1 className="text-2xl font-bold">Backtest Lab</h1>
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/50 pb-3">
+        <div className="flex flex-col gap-0.5">
+          <h1 className="font-heading text-lg font-bold tracking-tight text-foreground uppercase">
+            Backtest &amp; Quantitative Lab
+          </h1>
           <p className="text-xs text-muted-foreground">
-            The live strategy and risk engine replayed on real Delta India candles
+            Vectorized and event-driven simulation on real Delta Exchange India BTC candles
             {result ? ` · ${result.metrics.period.replace(/:00\+00:00/g, "").replace(" -> ", " to ")}` : ""}
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Pill>Fills at next candle open</Pill>
-          <Pill>Stop checked before target</Pill>
-          <Pill>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Pill mono>Next-Bar Open</Pill>
+          <Pill mono>Pessimistic SL Check</Pill>
+          <Pill tone="ok" mono>
             {result?.commission_pct !== undefined
-              ? `${result.commission_pct.toFixed(3)}% fee/side applied`
-              : "0.053% fee/side applied"}
+              ? `${result.commission_pct.toFixed(3)}% Fee/Side`
+              : "0.053% Fee/Side"}
           </Pill>
-          {result?.resolution && <Pill tone="accent">{result.resolution} candles</Pill>}
+          {result?.resolution && <Pill tone="accent" mono>{result.resolution} Candles</Pill>}
         </div>
       </div>
 
       <StrategyComparison />
 
-      <div className="flex flex-wrap items-start gap-5">
+      <div className="flex flex-wrap items-start gap-4">
         <BacktestForm onRun={run} running={backtest.isPending} />
-        <div className="flex min-w-0 flex-[999_1_640px] flex-col gap-5">
+        <div className="flex min-w-0 flex-[999_1_640px] flex-col gap-4">
           {backtest.isError ? (
-            <Panel title="Backtest failed">
-              <p className="text-sm text-kill">{backtest.error.message}</p>
+            <Panel title="Simulation Failed">
+              <p className="text-xs font-mono text-kill">{backtest.error.message}</p>
             </Panel>
           ) : (
             <>
               {result && !backtest.isPending && (
-                <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-primary/20 bg-primary/5 px-4 py-2.5 text-xs">
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded border border-border/70 bg-card p-2.5 text-xs">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-semibold text-foreground">
-                      {result.strategy === "stoch_sma_66" ? "Stochasticate Momentum 66" : "Trend Regime"}
+                      {result.strategy === "stoch_sma_66" || result.strategy === "strategy_guide" ? "Strategy Guide" : "Trade Regime Follower"}
                     </span>
-                    <span className="text-muted-foreground">·</span>
-                    <span className="font-mono font-medium text-primary">{result.resolution}</span>
-                    <span className="text-muted-foreground">·</span>
-                    <span>{result.days} days</span>
-                    <span className="text-muted-foreground">·</span>
-                    <span>
-                      Fee: <strong className="font-mono text-foreground">{result.commission_pct ?? 0.053}%</strong>
+                    <span className="text-muted-foreground/40">·</span>
+                    <span className="font-mono font-bold text-primary">{result.resolution}</span>
+                    <span className="text-muted-foreground/40">·</span>
+                    <span className="font-mono">{result.days} Days</span>
+                    <span className="text-muted-foreground/40">·</span>
+                    <span className="font-mono text-muted-foreground">
+                      Fee: <strong className="text-foreground">{result.commission_pct ?? 0.053}%</strong>
                     </span>
                   </div>
                   <div className="flex flex-wrap items-center gap-2 font-mono text-[11px] text-muted-foreground">
-                    {result.strategy === "stoch_sma_66" ? (
+                    {result.strategy === "stoch_sma_66" || result.strategy === "strategy_guide" ? (
                       <>
-                        <span>MA: {result.params.sma_period ?? 66}</span>
-                        <span>%K: {result.params.k_period ?? 14} (sm: {result.params.smooth_k ?? 2})</span>
+                        <span>SMA: {result.params.sma_period ?? 100}</span>
+                        <span>%K: {result.params.k_period ?? 16}</span>
                         <span>Levels: {result.params.level_low ?? 20}/{result.params.level_high ?? 60}</span>
                         <span>R:R: 1:{result.params.rr_ratio ?? 2}</span>
                       </>
@@ -96,7 +97,7 @@ export function BacktestView() {
                   {result.trades.length > 0 && <BacktestTrades trades={result.trades} />}
                 </>
               ) : (
-                <Skeleton className="h-[320px] rounded-xl" />
+                <Skeleton className="h-[300px] rounded" />
               )}
             </>
           )}

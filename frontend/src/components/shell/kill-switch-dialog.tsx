@@ -21,13 +21,13 @@ import { fmtPrice } from "@/lib/format";
 import type { BotStatus } from "@/types/api";
 
 const STEPS = [
-  "Trading halts. No new entries.",
-  "All open orders are cancelled, including the exchange stop.",
-  "The position closes with a reduce-only market order.",
-  "The bot stays off until you reset the kill switch.",
+  "Trading halts immediately. All signals rejected.",
+  "All open orders are cancelled, including the exchange bracket stop.",
+  "Open position is flattened with a reduce-only market order.",
+  "The bot remains locked until manually reset.",
 ];
 
-/** Accessible confirm (focus trap, Escape to cancel) before the irreversible flatten. */
+/** Institutional confirm dialog before emergency liquidation & kill switch. */
 export function KillSwitchDialog({ status }: { status: BotStatus }) {
   const kill = useBotAction("kill");
   const { position } = status;
@@ -36,56 +36,62 @@ export function KillSwitchDialog({ status }: { status: BotStatus }) {
     <AlertDialog>
       <AlertDialogTrigger
         render={
-          <Button className="h-9 rounded-xl bg-kill px-3.5 font-semibold text-white hover:bg-kill/85">
-            <OctagonX /> Kill switch
+          <Button
+            size="sm"
+            className="h-8 gap-1.5 rounded-md border border-kill/50 bg-kill/90 px-3 text-xs font-semibold text-white shadow-xs transition-colors hover:bg-kill"
+          >
+            <OctagonX className="size-3.5" />
+            <span>Kill Switch</span>
           </Button>
         }
       />
-      <AlertDialogContent className="border border-kill-line p-6 data-[size=default]:sm:max-w-md">
+      <AlertDialogContent className="rounded-lg border border-kill-line p-5 data-[size=default]:sm:max-w-md">
         <AlertDialogHeader>
-          <AlertDialogMedia className="bg-kill-soft text-kill">
-            <OctagonX />
+          <AlertDialogMedia className="bg-kill-soft text-kill rounded-md">
+            <OctagonX className="size-5" />
           </AlertDialogMedia>
-          <AlertDialogTitle className="font-heading text-lg font-bold">Kill the bot now?</AlertDialogTitle>
-          <AlertDialogDescription>
-            Closes everything for {status.symbol} on Delta {status.dry_run ? "(paper mode)" : "testnet"}.
+          <AlertDialogTitle className="font-heading text-base font-bold text-foreground">
+            Activate Emergency Kill Switch?
+          </AlertDialogTitle>
+          <AlertDialogDescription className="text-xs text-muted-foreground">
+            Immediately liquidates all open positions and cancels all working orders for {status.symbol} on Delta {status.dry_run ? "(paper mode)" : "testnet"}.
           </AlertDialogDescription>
         </AlertDialogHeader>
 
-        <div className="flex flex-wrap justify-between gap-3 rounded-xl border bg-muted px-4 py-3">
-          <div className="flex flex-col gap-1">
-            <span className="eyebrow">Open position</span>
+        <div className="flex flex-wrap justify-between gap-3 rounded-md border border-border bg-muted/50 px-3.5 py-2.5">
+          <div className="flex flex-col gap-0.5">
+            <span className="eyebrow">Open Position</span>
             {position.side === "flat" ? (
-              <span className="font-mono text-sm">Flat</span>
+              <span className="font-mono text-xs text-muted-foreground">Flat (No Exposure)</span>
             ) : (
-              <span className={`font-mono text-sm font-semibold ${SIDE_TEXT_CLASS[position.side]}`}>
+              <span className={`font-mono text-xs font-semibold ${SIDE_TEXT_CLASS[position.side]}`}>
                 {position.side.toUpperCase()} {position.size} @ {fmtPrice(position.entry_price)}
               </span>
             )}
           </div>
-          <div className="flex flex-col gap-1">
-            <span className="eyebrow">Mode</span>
-            <span className="font-mono text-sm">{status.dry_run ? "Paper" : "Live testnet"}</span>
+          <div className="flex flex-col gap-0.5">
+            <span className="eyebrow">Account Mode</span>
+            <span className="font-mono text-xs text-foreground">{status.dry_run ? "Paper Trading" : "Live Testnet"}</span>
           </div>
         </div>
 
-        <ol className="flex flex-col gap-2">
+        <ol className="flex flex-col gap-1.5 py-1">
           {STEPS.map((step, i) => (
-            <li key={step} className="grid grid-cols-[22px_1fr] gap-2 text-sm leading-relaxed">
-              <span className="font-mono text-xs leading-relaxed font-semibold text-kill">{i + 1}</span>
-              {step}
+            <li key={step} className="grid grid-cols-[18px_1fr] gap-2 text-xs leading-relaxed text-muted-foreground">
+              <span className="font-mono font-semibold text-kill">{i + 1}.</span>
+              <span>{step}</span>
             </li>
           ))}
         </ol>
 
-        <AlertDialogFooter className="bg-muted">
-          <AlertDialogCancel>Keep running</AlertDialogCancel>
+        <AlertDialogFooter className="border-t border-border/40 pt-3">
+          <AlertDialogCancel className="h-8 text-xs rounded-md">Cancel (Keep Running)</AlertDialogCancel>
           <AlertDialogAction
             disabled={kill.isPending}
             onClick={() => kill.mutate()}
-            className="bg-kill font-semibold text-white hover:bg-kill/85"
+            className="h-8 rounded-md bg-kill px-3 text-xs font-semibold text-white hover:bg-kill/85"
           >
-            {kill.isPending ? "Flattening…" : "Kill and flatten"}
+            {kill.isPending ? "Liquidating…" : "Confirm & Flatten"}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

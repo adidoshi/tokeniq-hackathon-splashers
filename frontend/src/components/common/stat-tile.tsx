@@ -7,7 +7,6 @@ interface StatTileProps {
   label: string;
   value?: ReactNode;
   sub?: ReactNode;
-  /** "accent" = the bot's own highlight (lilac); use for at most one tile per row */
   tone?: "default" | "accent";
   valueClassName?: string;
   loading?: boolean;
@@ -19,18 +18,24 @@ export function StatTile({ label, value, sub, tone = "default", valueClassName, 
   return (
     <div
       className={cn(
-        "flex min-w-0 flex-col gap-2 rounded-[10px] border bg-card px-4 py-3.5",
-        accent && "border-accent-line bg-accent-soft",
+        "flex min-w-0 flex-col justify-between gap-1.5 rounded-lg border border-border bg-card p-3 sm:p-3.5 transition-colors",
+        accent && "border-primary/30 bg-primary/5",
         className,
       )}
     >
-      <span className={cn("eyebrow", accent && "text-primary")}>{label}</span>
+      <div className="flex items-center justify-between gap-2">
+        <span className={cn("text-[10px] font-semibold tracking-wider uppercase text-muted-foreground", accent && "text-primary")}>
+          {label}
+        </span>
+      </div>
       {loading ? (
-        <Skeleton className="h-8 w-28" />
+        <Skeleton className="my-1 h-7 w-28 rounded" />
       ) : (
-        <span className={cn("tabular font-mono text-2xl font-medium sm:text-[26px]", valueClassName)}>{value}</span>
+        <div className={cn("tabular font-mono text-xl font-semibold tracking-tight sm:text-[22px] text-foreground", valueClassName)}>
+          {value}
+        </div>
       )}
-      {sub && <span className={cn("text-xs text-muted-foreground", accent && "text-accent-text")}>{sub}</span>}
+      {sub && <div className={cn("text-[11px] leading-tight text-muted-foreground", accent && "text-foreground/80")}>{sub}</div>}
     </div>
   );
 }

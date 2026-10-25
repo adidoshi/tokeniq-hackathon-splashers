@@ -105,15 +105,15 @@ def oscillating_uptrend(n: int = 400, vol_spikes: bool = False) -> pd.DataFrame:
 
 def test_stochastic_sma_long_signals_obey_every_rule():
     strat = StochasticSMAStrategy()
-    assert strat.params["sma_period"] == 66
-    assert strat.params["k_period"] == 14
+    assert strat.params["sma_period"] == 100
+    assert strat.params["k_period"] == 16
     assert strat.params["smooth_k"] == 2
     assert strat.params["d_period"] == 3
     assert strat.params["level_high"] == 60.0
     assert strat.params["level_low"] == 20.0
     assert strat.params["stopbars"] == 4
     assert strat.params["rr_ratio"] == 2.0
-    assert strat.display_name == "Stochasticate Momentum 66"
+    assert strat.display_name == "Strategy Guide"
 
     data = strat.compute(oscillating_uptrend())
     longs = [i for i in range(len(data)) if strat.signal(data, i).side == Side.LONG]
@@ -161,7 +161,7 @@ def test_stochastic_sma_short_signals_and_exits():
     # If ma_rising occurs:
     mock_df = data.copy()
     mock_df.loc[mock_df.index[shorts[0]], "ma_rising"] = True
-    assert strat.should_exit(mock_df, shorts[0], Side.SHORT) == "66 SMA trend reversed to rising"
+    assert strat.should_exit(mock_df, shorts[0], Side.SHORT) == "100 SMA trend reversed to rising"
 
 
 def test_stochastic_sma_warmup():

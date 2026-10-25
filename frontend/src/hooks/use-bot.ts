@@ -81,7 +81,10 @@ export function useSelectStrategy() {
     mutationFn: ({ strategy, params = {} }: { strategy: string; params?: Record<string, unknown> }) =>
       botService.selectStrategy(strategy, params),
     onSuccess: (res) => {
-      const label = res.strategy === "stoch_sma_66" ? "Stochasticate Momentum 66" : "Trade Regime Follower";
+      const label =
+        res.strategy === "stoch_sma_66" || res.strategy === "strategy_guide"
+          ? "Strategy Guide"
+          : "Trade Regime Follower";
       toast.success(`Active strategy switched to ${label}`);
     },
     onError: (err) => toast.error(err.message),

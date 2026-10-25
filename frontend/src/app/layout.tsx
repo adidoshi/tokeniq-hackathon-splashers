@@ -14,8 +14,8 @@ const jetbrains = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "TokenIQ Desk",
-  description: "Autonomous BTCUSD trading bot on Delta Exchange India testnet",
+  title: "Delta Exchange India - Algo Trading Terminal · Powered by Token IQ",
+  description: "Algo Trading Terminal for Delta Exchange India testnet execution, powered by Token IQ",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

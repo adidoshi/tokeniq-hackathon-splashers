@@ -95,7 +95,8 @@ export interface Candle {
   ema_slow?: number;
   adx?: number;
   atr?: number;
-  /** stoch_sma_66 indicator columns */
+  /** stoch_sma_66 / Strategy Guide indicator columns */
+  sma_100?: number;
   sma_66?: number;
   stoch_k?: number;
   stoch_d?: number;

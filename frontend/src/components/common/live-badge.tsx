@@ -5,35 +5,52 @@ import type { BotStatus } from "@/types/api";
 
 type Tone = "run" | "idle" | "warn" | "kill";
 
-const TONE: Record<Tone, { box: string; dot: string; ring: string }> = {
-  run: { box: "border-long/40 bg-long/10 text-long", dot: "bg-long", ring: "var(--glow-long)" },
-  idle: { box: "border-border bg-muted text-muted-foreground", dot: "bg-dim", ring: "transparent" },
-  warn: { box: "border-warn/40 bg-warn/10 text-warn", dot: "bg-warn", ring: "transparent" },
-  kill: { box: "border-kill-line bg-kill-soft text-kill", dot: "bg-kill", ring: "var(--glow-short)" },
+const TONE: Record<Tone, { box: string; dot: string }> = {
+  run: { box: "border-long/30 bg-long/10 text-long", dot: "bg-long pulse-ring" },
+  idle: { box: "border-border bg-muted/60 text-muted-foreground", dot: "bg-muted-foreground/60" },
+  warn: { box: "border-warn/30 bg-warn/10 text-warn", dot: "bg-warn" },
+  kill: { box: "border-kill/40 bg-kill/15 text-kill font-semibold", dot: "bg-kill" },
 };
 
-/** The bot's state as a glowing badge: pulsing ring while it runs, orbiting spinner on top of the dot. */
+/** Institutional live badge indicating bot execution state and execution environment. */
 export function LiveBadge({ status }: { status: BotStatus }) {
-  const tone: Tone = status.risk.killed ? "kill" : status.risk.halted_reason ? "warn" : status.running ? "run" : "idle";
-  const label = status.risk.killed ? "Kill switch" : status.risk.halted_reason ? "Halted" : status.running ? "Bot running" : "Bot paused";
+  const tone: Tone = status.risk.killed
+    ? "kill"
+    : status.risk.halted_reason
+      ? "warn"
+      : status.running
+        ? "run"
+        : "idle";
+
+  const label = status.risk.killed
+    ? "KILL SWITCH ACTIVE"
+    : status.risk.halted_reason
+      ? "HALTED"
+      : status.running
+        ? "ALGO RHYTHM LIVE"
+        : "ALGO RHYTHM STANDBY";
+
   const t = TONE[tone];
   return (
-    <span
-      role="status"
-      className={cn("inline-flex items-center gap-2 rounded-full border px-3 py-1.5 font-heading text-xs font-semibold tracking-wider uppercase", t.box)}
-    >
-      <span className="relative flex size-3 items-center justify-center">
-        <span
-          className={cn("size-2 rounded-full", t.dot, tone !== "idle" && tone !== "warn" && "pulse-ring")}
-          style={{ ["--ring-color" as string]: t.ring }}
-        />
-        {tone === "run" && <span className="spin-orbit absolute inset-[-3px] rounded-full border border-transparent border-t-long" aria-hidden="true" />}
+    <div className="flex items-center gap-2">
+      <span
+        role="status"
+        className={cn(
+          "inline-flex items-center gap-2 rounded-md border px-2.5 py-1 text-xs font-mono font-medium tracking-wide whitespace-nowrap transition-colors",
+          t.box
+        )}
+      >
+        <span className={cn("size-2 rounded-full shrink-0", t.dot)} aria-hidden="true" />
+        <span>{label}</span>
       </span>
-      {label}
-      <span className="font-normal tracking-normal text-muted-foreground normal-case">
-        {status.dry_run ? "paper" : "testnet"}
-        {status.preset === "demo" ? " · demo speed" : ""}
+
+      <span
+        title="Execution routes through Delta Exchange India testnet environment"
+        className="inline-flex items-center gap-1.5 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 font-mono text-[11px] font-bold tracking-wider text-emerald-400 uppercase shadow-xs whitespace-nowrap"
+      >
+        <span className="size-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)] shrink-0" aria-hidden="true" />
+        TESTNET DEMO
       </span>
-    </span>
+    </div>
   );
 }

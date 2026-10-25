@@ -28,7 +28,7 @@ CONTRACT_VALUES = {"BTCUSD": 0.001, "ETHUSD": 0.01}  # Delta contract sizes (bas
 CHART_COLUMNS = (
     "open", "high", "low", "close", "volume",
     "ema_fast", "ema_slow", "adx", "atr",
-    "sma_66", "stoch_k", "stoch_d",
+    "sma_100", "sma_66", "stoch_k", "stoch_d",
 )
 
 
@@ -145,7 +145,8 @@ async def candles(resolution: str | None = None, limit: int = Query(300, ge=10, 
                   strategy: str | None = None, engine: Engine = Depends(get_engine)):
     """Real Delta OHLCV for the bot's symbol + the live or requested strategy's indicator columns."""
     res = _check_resolution(resolution or engine.s.resolution)
-    strat = STRATEGIES[strategy]() if strategy and strategy in STRATEGIES else engine.strategy
+    strat_key = "stoch_sma_66" if strategy == "strategy_guide" else strategy
+    strat = STRATEGIES[strat_key]() if strat_key and strat_key in STRATEGIES else engine.strategy
     warmup = strat.warmup
     if res == engine.s.resolution and engine.candles is not None and len(engine.candles) > 0 and (strategy is None or strategy == engine.strategy.name):
         df = engine.candles
