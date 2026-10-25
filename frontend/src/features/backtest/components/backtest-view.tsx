@@ -1,21 +1,28 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 import { Panel } from "@/components/common/panel";
 import { Pill } from "@/components/common/pill";
 import { Skeleton } from "@/components/ui/skeleton";
-import { BacktestForm, DEFAULT_BACKTEST, toRequest, type BacktestFormValues } from "@/features/backtest/components/backtest-form";
+import { BacktestForm, DEFAULT_BACKTEST, toCompareRequest, toRequest, type BacktestFormValues } from "@/features/backtest/components/backtest-form";
 import { BacktestMetrics } from "@/features/backtest/components/backtest-metrics";
 import { BacktestTrades } from "@/features/backtest/components/backtest-trades";
 import { EquityCurve } from "@/features/backtest/components/equity-curve";
 import { StrategyComparison } from "@/features/backtest/components/strategy-comparison";
 import { useBacktest } from "@/hooks/use-backtest";
+import { useStrategies } from "@/hooks/use-bot";
 
 export function BacktestView() {
   const backtest = useBacktest();
+  const { data: strategies } = useStrategies();
+  // the comparison table follows the last run: same asset, timeframe, history, fee and params
+  const [compareReq, setCompareReq] = useState(() => toCompareRequest(DEFAULT_BACKTEST));
   const { mutate } = backtest;
-  const run = (values: BacktestFormValues) => mutate(toRequest(values));
+  const run = (values: BacktestFormValues) => {
+    setCompareReq(toCompareRequest(values));
+    mutate(toRequest(values));
+  };
 
   // open with a real result instead of an empty page
   useEffect(() => {
@@ -36,11 +43,16 @@ export function BacktestView() {
         <div className="flex flex-wrap gap-2">
           <Pill>Fills at next candle open</Pill>
           <Pill>Stop checked before target</Pill>
-          <Pill>0.053% taker fee each side</Pill>
+          <Pill>
+            {result?.commission_pct !== undefined
+              ? `${result.commission_pct.toFixed(3)}% fee/side applied`
+              : "0.053% fee/side applied"}
+          </Pill>
+          {result?.resolution && <Pill tone="accent">{result.resolution} candles</Pill>}
         </div>
       </div>
 
-      <StrategyComparison />
+      <StrategyComparison req={compareReq} />
 
       <div className="flex flex-wrap items-start gap-5">
         <BacktestForm onRun={run} running={backtest.isPending} />
@@ -51,6 +63,42 @@ export function BacktestView() {
             </Panel>
           ) : (
             <>
+              {result && !backtest.isPending && (
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-primary/20 bg-primary/5 px-4 py-2.5 text-xs">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-semibold text-foreground">
+                      {strategies?.find((s) => s.id === result.strategy)?.display_name ?? result.strategy}
+                    </span>
+                    <span className="text-muted-foreground">·</span>
+                    <span className="font-mono font-medium text-foreground">{result.symbol}</span>
+                    <span className="text-muted-foreground">·</span>
+                    <span className="font-mono font-medium text-primary">{result.resolution}</span>
+                    <span className="text-muted-foreground">·</span>
+                    <span>{result.days} days</span>
+                    <span className="text-muted-foreground">·</span>
+                    <span>
+                      Fee: <strong className="font-mono text-foreground">{result.commission_pct ?? 0.053}%</strong>
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 font-mono text-[11px] text-muted-foreground">
+                    {result.strategy === "stoch_sma_66" ? (
+                      <>
+                        <span>MA: {result.params.sma_period ?? 66}</span>
+                        <span>%K: {result.params.k_period ?? 14} (sm: {result.params.smooth_k ?? 2})</span>
+                        <span>Levels: {result.params.level_low ?? 20}/{result.params.level_high ?? 60}</span>
+                        <span>R:R: 1:{result.params.rr_ratio ?? 2}</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>EMA: {result.params.fast ?? 20}/{result.params.slow ?? 50}</span>
+                        <span>ADX: {result.params.adx_threshold ?? 20}</span>
+                        <span>ATR: {result.params.trail_atr ?? 3}x</span>
+                        <span>Mode: {result.params.entry_mode ?? "fresh"}</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
               <BacktestMetrics metrics={result?.metrics} loading={backtest.isPending} />
               {result && !backtest.isPending ? (
                 <>

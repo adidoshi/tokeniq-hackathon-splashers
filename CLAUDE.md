@@ -52,13 +52,15 @@ Backend modules (`backend/app/`):
 - `api/routes.py`: REST (`/status`, `/bot/*`, `/trades`, `/events`, `/candles`, `/backtest`, `/backtest/compare`, `/replay`, `/api/strategies`, `/api/analytics/weekly`). `api/stream.py`: `/ws` (events + status every 2s).
 - `store.py`: SQLModel/SQLite trade and event log.
 
-## Strategy: trend_regime (the only live strategy)
+## Strategy: trend_regime (default live strategy; stoch_sma_66 is the second live option)
 - **Thesis:** crypto trends persist, but EMA crossovers bleed in chop, so we trade the trend only in a proven trending regime.
 - **Entry state:** LONG when EMA20 > EMA50, close > EMA20 and ADX ≥ 20. SHORT is the mirror. Stand aside when ATR > 3× its 100-bar median (volatility shock).
 - **`entry_mode=fresh`** (validated) enters only on the bar the state switches on; `state` enters whenever the state is on (demo).
 - **Exit:** a 3×ATR trailing stop held on Delta (`bracket_trail_amount`); also exit when the EMAs cross back.
 - **Evidence (real BTCUSD, 1h, 365 days, 70/30 split):** out-of-sample about +1%, PF 1.04.
-- **The other three strategies** (`sma_cross_5_15`, `stoch_sma_66`, `scalping_strategy`) lose 27–86% out of sample. Their fixed 0.20% stops lose about half their risk to fees, and they have no regime filter. They stay as backtest evidence only.
+- **`stoch_sma_66`** (66 SMA trend + Stochastic 20/60 cross, 4-bar swing stop, 1:2 target) was made live by team decision. On BTC 1h it loses (−37% over 365 days); it is positive only on ETH 4h. The Backtest Lab shows it next to trend_regime.
+- **`sma_cross_5_15` and `scalping_strategy`** lose heavily out of sample (fixed 0.20% stops lose about half their risk to fees, no regime filter). They are hidden from the dashboard; the API can still backtest them.
+- **Cross-asset (365 days, default params):** trend_regime 1h: BTC +0.7%, ETH −29%, SOL +0.8%, XAUT −15% (6 months of history). The Backtest Lab's asset selector (BTC/ETH/SOL/XAUT, `BACKTEST_SYMBOLS`) reruns the form and the in/out-of-sample table per asset.
 - **On 1m** every strategy loses about 3% a day after fees, capped by the daily loss limit. That's why 1m is "demo speed" only.
 
 ## Risk layers (`risk.py`)

@@ -18,7 +18,10 @@ DEMO_PRESET = {"resolution": "1m", "strategy_params": {"entry_mode": "state", "t
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=(".env", ".env.local", "../.env.local"),
+        extra="ignore",
+    )
 
     # Delta Exchange (India testnet by default)
     delta_api_key: str = ""

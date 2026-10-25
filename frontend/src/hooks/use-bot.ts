@@ -74,3 +74,21 @@ export function useBotAction(action: BotAction) {
     },
   });
 }
+
+export function useSelectStrategy() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ strategy, params = {} }: { strategy: string; params?: Record<string, unknown> }) =>
+      botService.selectStrategy(strategy, params),
+    onSuccess: (res) => {
+      const label = res.strategy === "stoch_sma_66" ? "Stochasticate Momentum 66" : "Trade Regime Follower";
+      toast.success(`Active strategy switched to ${label}`);
+    },
+    onError: (err) => toast.error(err.message),
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.status });
+      void queryClient.invalidateQueries({ queryKey: ["candles"] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.events });
+    },
+  });
+}

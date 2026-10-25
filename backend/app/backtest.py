@@ -17,14 +17,22 @@ from app.indicators import candles_to_df
 from app.risk import RiskManager
 from app.strategies.base import Side, Strategy
 
-# Exactly the resolutions Delta's /v2/history/candles serves. Delta has NO sub-minute history,
-# so anything like "5s" could only be fabricated - never add it back.
+# Supported candle resolutions (Delta native + 3h via 1h resampling).
 RESOLUTION_SECONDS = {"1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800, "1h": 3600,
-                      "2h": 7200, "4h": 14400, "6h": 21600, "1d": 86400}
+                      "2h": 7200, "3h": 10800, "4h": 14400, "6h": 21600, "1d": 86400}
 
 
 async def fetch_history(client: DeltaClient, symbol: str, resolution: str, days: int) -> pd.DataFrame:
     """Page through /v2/history/candles (max 2000 per call)."""
+    if resolution == "3h":
+        df_1h = await fetch_history(client, symbol, "1h", days)
+        if len(df_1h) == 0:
+            return df_1h
+        df_3h = df_1h.resample("3h").agg({
+            "open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"
+        }).dropna()
+        return df_3h[~df_3h.index.duplicated()]
+
     step = RESOLUTION_SECONDS[resolution] * 2000
     end = int(time.time())
     start = end - days * 86400

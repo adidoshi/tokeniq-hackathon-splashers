@@ -55,6 +55,17 @@ def test_strategy_stands_aside_in_chop():
     assert s.signal(data, len(data) - 1).side == Side.FLAT
 
 
+def test_trend_regime_ema_params_drive_indicators_and_warmup():
+    s = TrendRegimeStrategy(fast=10, slow=30)
+    assert s.warmup == 100  # floor for short EMAs
+    assert TrendRegimeStrategy(fast=50, slow=200).warmup == 400  # slow EMA needs ~2x its period
+    data = s.compute(make_df(80_000 + np.arange(300) * 10.0))
+    assert data["ema_fast"].iloc[-1] > data["ema_slow"].iloc[-1]  # rising market: fast EMA leads
+    assert data["ema_fast"].iloc[-1] == pytest.approx(data["close"].ewm(span=10, adjust=False).mean().iloc[-1])
+    with pytest.raises(ValueError, match="EMA periods"):
+        TrendRegimeStrategy(fast=50, slow=20)
+
+
 def test_backtest_profits_on_trend_and_has_no_lookahead():
     df = flat_then_trend()
     res = run_backtest(df, TrendRegimeStrategy(), risk())
@@ -105,18 +116,73 @@ def oscillating_uptrend(n: int = 400, vol_spikes: bool = False) -> pd.DataFrame:
 
 def test_stochastic_sma_long_signals_obey_every_rule():
     strat = StochasticSMAStrategy()
+    assert strat.params["sma_period"] == 66
+    assert strat.params["k_period"] == 14
+    assert strat.params["smooth_k"] == 2
+    assert strat.params["d_period"] == 3
+    assert strat.params["level_high"] == 60.0
+    assert strat.params["level_low"] == 20.0
+    assert strat.params["stopbars"] == 4
+    assert strat.params["rr_ratio"] == 2.0
+    assert strat.display_name == "Stochasticate Momentum 66"
+
     data = strat.compute(oscillating_uptrend())
     longs = [i for i in range(len(data)) if strat.signal(data, i).side == Side.LONG]
     assert longs, "expected at least one long on a rising, oscillating market"
     for i in longs:
         row, prev = data.iloc[i], data.iloc[i - 1]
         sig = strat.signal(data, i)
-        assert row["sma_66"] > prev["sma_66"]                      # trend up
-        assert prev["stoch_k"] <= 35 < row["stoch_k"]              # %K crossed above 35
-        assert row["close"] > row["open"]                          # green trigger candle
-        expected_stop = max(row["close"] - row["low"], row["close"] * 0.001)
+        assert row["ma_rising"]                                     # 66 SMA strictly rising
+        assert prev["stoch_k"] <= 20 < row["stoch_k"]               # %K crossed above 20
+        assert row["close"] > row["open"]                           # green trigger candle
+        expected_stop = max(row["close"] - row["lowest_stopbars"], row["close"] * 0.001)
         assert sig.stop_distance == pytest.approx(expected_stop)
         assert sig.take_profit_distance == pytest.approx(2 * expected_stop)
+        assert sig.trail_distance == 0.0                            # fixed bracket stop (no trailing)
+
+    checklist = strat.get_checklist(data, longs[0])
+    assert any(c["id"] == "stoch_reversal" for c in checklist)
+    assert any(c["id"] == "swing_sl" for c in checklist)
+
+
+def oscillating_downtrend(n: int = 400) -> pd.DataFrame:
+    """Falling trend with regular bounces: SMA keeps falling while oscillators cycle."""
+    t = np.arange(n)
+    closes = 85_000 - t * 4.0 + np.sin(t / 4.0) * 120
+    return make_df(closes)
+
+
+def test_stochastic_sma_short_signals_and_exits():
+    strat = StochasticSMAStrategy(exit_on_trend_flip=True)
+    data = strat.compute(oscillating_downtrend())
+    shorts = [i for i in range(len(data)) if strat.signal(data, i).side == Side.SHORT]
+    assert shorts, "expected at least one short on a falling, oscillating market"
+    for i in shorts:
+        row, prev = data.iloc[i], data.iloc[i - 1]
+        sig = strat.signal(data, i)
+        assert row["ma_falling"]                                    # 66 SMA strictly falling
+        assert prev["stoch_k"] >= 60 > row["stoch_k"]               # %K crossed below 60
+        assert row["close"] < row["open"]                           # red trigger candle
+        expected_stop = max(row["highest_stopbars"] - row["close"], row["close"] * 0.001)
+        assert sig.stop_distance == pytest.approx(expected_stop)
+        assert sig.take_profit_distance == pytest.approx(2 * expected_stop)
+
+    # Test exit when SMA reverses
+    assert strat.should_exit(data, shorts[0], Side.SHORT) is None
+    # If ma_rising occurs:
+    mock_df = data.copy()
+    mock_df.loc[mock_df.index[shorts[0]], "ma_rising"] = True
+    assert strat.should_exit(mock_df, shorts[0], Side.SHORT) == "66 SMA trend reversed to rising"
+
+
+def test_stochastic_sma_warmup():
+    strat = StochasticSMAStrategy()
+    df = make_df(80_000 + np.arange(40) * 10.0)
+    data = strat.compute(df)
+    sig = strat.signal(data, 10)
+    assert sig.side == Side.FLAT and "warming up" in sig.reason
+    chk = strat.get_checklist(data, 10)
+    assert chk[0]["id"] == "warmup" and chk[0]["met"] is False
 
 
 def test_stochastic_sma_backtest_trades_and_fills_at_next_open():

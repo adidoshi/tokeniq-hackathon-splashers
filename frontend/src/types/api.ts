@@ -28,7 +28,7 @@ export interface BotStatus {
   strategy_display_name: string;
   strategy_summary: string;
   available_strategies: string[];
-  params: Record<string, number | string>;
+  params: Record<string, number | string | boolean>;
   price: number | null;
   mark_price: number | null;
   balance: number;
@@ -90,11 +90,15 @@ export interface Candle {
   low: number;
   close: number;
   volume: number;
-  /** strategy indicator columns (present for trend_regime) */
+  /** trend_regime indicator columns */
   ema_fast?: number;
   ema_slow?: number;
   adx?: number;
   atr?: number;
+  /** stoch_sma_66 indicator columns */
+  sma_66?: number;
+  stoch_k?: number;
+  stoch_d?: number;
 }
 
 export interface Trade {
@@ -121,7 +125,8 @@ export interface BacktestRequest {
   days: number;
   resolution?: string;
   equity: number;
-  params: Record<string, number | string>;
+  commission_pct?: number;
+  params: Record<string, number | string | boolean>;
 }
 
 export interface BacktestMetrics {
@@ -156,10 +161,11 @@ export interface BacktestResult {
   strategy?: string;
   resolution?: string;
   days?: number;
+  commission_pct?: number;
   metrics: BacktestMetrics;
   trades: BacktestTrade[];
   equity_curve: { time: string; equity: number }[];
-  params: Record<string, number | string>;
+  params: Record<string, number | string | boolean>;
 }
 
 export interface ActionResult {
@@ -186,6 +192,7 @@ export interface StrategyInfo {
 
 export interface CompareMetrics {
   return_pct: number;
+  buy_hold_pct: number;
   trades: number;
   win_rate_pct: number;
   profit_factor: number | null;
@@ -193,12 +200,29 @@ export interface CompareMetrics {
   max_drawdown_pct: number;
 }
 
+export interface CompareRequest {
+  symbol: string;
+  resolution: string;
+  days: number;
+  commission_pct: number;
+  /** per strategy id; strategies left out run on their defaults */
+  params: Record<string, BacktestRequest["params"]>;
+}
+
 export interface CompareResult {
   symbol: string;
   resolution: string;
   days: number;
+  period: string;
   split_at: string;
-  strategies: (Omit<StrategyInfo, "active"> & { in_sample: CompareMetrics; out_of_sample: CompareMetrics })[];
+  commission_pct: number;
+  strategies: (Omit<StrategyInfo, "active"> & {
+    params: Record<string, number | string | boolean>;
+    /** true when the row ran on the params from the backtest form */
+    custom: boolean;
+    in_sample: CompareMetrics;
+    out_of_sample: CompareMetrics;
+  })[];
 }
 
 export interface ReplaySummary {
@@ -220,7 +244,7 @@ export interface ReplayResult {
   days: number;
   strategy: string;
   strategy_display_name: string;
-  params: Record<string, number | string>;
+  params: Record<string, number | string | boolean>;
   candles: Candle[];
   trades: BacktestTrade[];
   equity_curve: { time: string; equity: number }[];

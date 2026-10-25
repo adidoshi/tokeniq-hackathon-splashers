@@ -7,47 +7,58 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useStrategyComparison } from "@/hooks/use-backtest";
 import { fmtPct, fmtR, parseTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import type { CompareRequest } from "@/types/api";
 
 const signed = (n: number) => cn("text-right font-semibold", n > 0 ? "text-long" : n < 0 ? "text-short" : "");
+/** The settings a row actually ran with (the class summary only describes the defaults). */
+function describeParams(id: string, p: Record<string, number | string | boolean>): string | null {
+  if (id === "trend_regime") return `EMA ${p.fast}/${p.slow} · ADX ≥ ${p.adx_threshold} · ${p.trail_atr}× ATR trailing stop · ${p.entry_mode} entries`;
+  if (id === "stoch_sma_66") return `SMA ${p.sma_period} · Stoch %K ${p.k_period} crossing ${p.level_low}/${p.level_high} · ${p.stopbars}-bar stop · 1:${p.rr_ratio} target`;
+  return null;
+}
+
+const day = (iso: string) => parseTime(iso).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 
 /**
- * The honest-evidence table: all four strategies on the same year of data, first 70% vs the last 30%
- * they were never chosen on. Only strategies that hold up out of sample are allowed to trade live.
+ * The honest-evidence table for the last backtest run: the live strategies on the same candles, first 70%
+ * vs the last 30% they were never tuned on, next to buy & hold for the same window.
  */
-export function StrategyComparison() {
-  const { data, isPending, isError, error } = useStrategyComparison("1h", 365);
+export function StrategyComparison({ req }: { req: CompareRequest }) {
+  const { data, isPending, isError, error } = useStrategyComparison(req);
+  const [from] = data?.period.split(" -> ") ?? [];
 
   return (
     <Panel
-      title="Which strategy may trade? In-sample vs out-of-sample"
-      aside={data ? `${data.symbol} 1h · 365 days · split ${parseTime(data.split_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}` : null}
+      title="Does it hold up on unseen data?"
+      aside={data ? `${data.symbol} ${data.resolution} · ${day(from)} to today · unseen from ${day(data.split_at)}` : `${req.symbol} ${req.resolution}`}
     >
       {isError ? (
         <p className="text-sm text-kill">{error.message}</p>
       ) : isPending ? (
-        <Skeleton className="h-44" />
+        <Skeleton className="h-32" />
       ) : (
         <>
-          <Table className="min-w-[720px]">
+          <Table className="min-w-[760px]">
             <TableHeader>
               <TableRow>
-                {["Strategy", "Return in", "Return out", "PF out", "Avg R out", "Max DD out", "Trades out"].map((h, i) => (
+                {["Strategy", "First 70% (tuning)", "Last 30% (unseen)", "Buy & hold, last 30%", "PF, last 30%", "Avg R, last 30%", "Max DD, last 30%", "Trades, last 30%"].map((h, i) => (
                   <TableHead key={h} className={cn("eyebrow", i > 0 && "text-right")}>{h}</TableHead>
                 ))}
               </TableRow>
             </TableHeader>
             <TableBody className="tabular font-mono text-xs">
-              {data.strategies.map((s) => (
-                <TableRow key={s.id} className={cn(s.live_enabled && "bg-accent-soft")}>
+              {data.strategies.map((s, i) => (
+                <TableRow key={s.id}>
                   <TableCell className="font-sans">
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-semibold">{s.display_name}</span>
-                      <Badge variant={s.live_enabled ? "default" : "secondary"}>{s.live_enabled ? "LIVE" : "evidence only"}</Badge>
+                      <Badge variant="secondary">Strategy {i + 1}</Badge>
                     </div>
-                    <span className="text-[11px] text-muted-foreground">{s.summary}</span>
+                    <span className="text-[11px] text-muted-foreground">{describeParams(s.id, s.params) ?? s.summary}</span>
                   </TableCell>
                   <TableCell className={signed(s.in_sample.return_pct)}>{fmtPct(s.in_sample.return_pct, { signed: true })}</TableCell>
                   <TableCell className={signed(s.out_of_sample.return_pct)}>{fmtPct(s.out_of_sample.return_pct, { signed: true })}</TableCell>
+                  <TableCell className="text-right text-muted-foreground">{fmtPct(s.out_of_sample.buy_hold_pct, { signed: true })}</TableCell>
                   <TableCell className="text-right">{s.out_of_sample.profit_factor ?? "-"}</TableCell>
                   <TableCell className={signed(s.out_of_sample.avg_r)}>{fmtR(s.out_of_sample.avg_r)}</TableCell>
                   <TableCell className="text-right text-short">{fmtPct(s.out_of_sample.max_drawdown_pct)}</TableCell>
@@ -57,9 +68,9 @@ export function StrategyComparison() {
             </TableBody>
           </Table>
           <p className="text-xs text-muted-foreground">
-            Same data, fees (0.053% per side) and risk rules for every strategy. Fixed 0.20% stops lose about half their
-            risk to fees on each trade; only the regime-filtered trend follower survives the out-of-sample period, so it
-            is the only one the live engine accepts.
+            Settings are picked on the first 70%; the last 30% (from {day(data.split_at)}) is the test they never saw.
+            Live trading is always unseen data. The strategy you ran uses your settings, the other its defaults;
+            both pay {data.commission_pct.toFixed(3)}% fee per side.
           </p>
         </>
       )}

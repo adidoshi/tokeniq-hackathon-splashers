@@ -20,12 +20,18 @@ from app.delta.client import DeltaClient
 from app.engine import Engine
 from app.indicators import candles_to_df
 from app.risk import RiskManager
-from app.strategies import STRATEGIES, describe
+from app.strategies import LIVE_STRATEGIES, STRATEGIES, describe
 
 router = APIRouter()
 PROD_URL = "https://api.india.delta.exchange"  # public candles for backtests (no keys)
-CONTRACT_VALUES = {"BTCUSD": 0.001, "ETHUSD": 0.01}  # Delta contract sizes (base asset per contract)
-CHART_COLUMNS = ("open", "high", "low", "close", "volume", "ema_fast", "ema_slow", "adx", "atr")
+# Delta India perpetuals the Backtest Lab offers: does the edge carry over from BTC to other assets?
+BACKTEST_SYMBOLS = ("BTCUSD", "ETHUSD", "SOLUSD", "XAUTUSD")
+_CONTRACT_VALUES: dict[str, float] = {}  # contract sizes read from Delta's product API, cached per symbol
+CHART_COLUMNS = (
+    "open", "high", "low", "close", "volume",
+    "ema_fast", "ema_slow", "adx", "atr",
+    "sma_66", "stoch_k", "stoch_d",
+)
 
 
 def get_engine(request: Request) -> Engine:
@@ -138,22 +144,34 @@ def _chart_rows(df: pd.DataFrame, limit: int) -> list[dict]:
 
 @router.get("/candles")
 async def candles(resolution: str | None = None, limit: int = Query(300, ge=10, le=1000),
-                  engine: Engine = Depends(get_engine)):
-    """Real Delta OHLCV for the bot's symbol + the live strategy's indicator columns."""
+                  strategy: str | None = None, engine: Engine = Depends(get_engine)):
+    """Real Delta OHLCV for the bot's symbol + the live or requested strategy's indicator columns."""
     res = _check_resolution(resolution or engine.s.resolution)
-    warmup = engine.strategy.warmup
-    if res == engine.s.resolution and engine.candles is not None and len(engine.candles) > 0:
+    strat = STRATEGIES[strategy]() if strategy and strategy in STRATEGIES else engine.strategy
+    warmup = strat.warmup
+    if res == engine.s.resolution and engine.candles is not None and len(engine.candles) > 0 and (strategy is None or strategy == engine.strategy.name):
         df = engine.candles
     else:
         now = int(time.time())
         start = now - RESOLUTION_SECONDS[res] * (limit + warmup + 50)
         try:
-            df = candles_to_df(await engine.client.get_candles(engine.s.symbol, res, start, now))
+            if res == "3h":
+                raw = await engine.client.get_candles(engine.s.symbol, "1h", start, now)
+                df_1h = candles_to_df(raw)
+                if len(df_1h) > 0:
+                    df = df_1h.resample("3h").agg({
+                        "open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"
+                    }).dropna()
+                    df = df[~df.index.duplicated()]
+                else:
+                    df = df_1h
+            else:
+                df = candles_to_df(await engine.client.get_candles(engine.s.symbol, res, start, now))
         except Exception as e:
             raise HTTPException(502, f"Delta did not return {engine.s.symbol} {res} candles: {type(e).__name__}: {e}")
     if len(df) == 0:
         raise HTTPException(502, f"Delta returned no {engine.s.symbol} {res} candles")
-    return _chart_rows(engine.strategy.compute(df), limit)
+    return _chart_rows(strat.compute(df), limit)
 
 
 _TICKER_CACHE: dict = {"at": 0.0, "rows": []}
@@ -206,7 +224,7 @@ async def market_tickers(engine: Engine = Depends(get_engine)):
 
 # ---------------- backtests ----------------
 _HISTORY_CACHE: OrderedDict[tuple, tuple[float, pd.DataFrame]] = OrderedDict()
-_CACHE_SIZE, _CACHE_TTL = 16, 300.0
+_CACHE_SIZE, _CACHE_TTL = 32, 60.0
 
 
 async def _history(symbol: str, resolution: str, days: int) -> pd.DataFrame:
@@ -223,7 +241,8 @@ async def _history(symbol: str, resolution: str, days: int) -> pd.DataFrame:
         raise HTTPException(502, f"could not load {symbol} {resolution} history from Delta: {type(e).__name__}: {e}")
     finally:
         await client.close()
-    if len(df) < 50:
+    min_candles = 5 if resolution == "1d" else (15 if resolution in ("4h", "6h", "3h", "2h") else 30)
+    if len(df) < min_candles:
         raise HTTPException(502, f"Delta returned only {len(df)} {symbol} {resolution} candles for {days} days")
     _HISTORY_CACHE[key] = (time.time(), df)
     while len(_HISTORY_CACHE) > _CACHE_SIZE:
@@ -231,7 +250,7 @@ async def _history(symbol: str, resolution: str, days: int) -> pd.DataFrame:
     return df
 
 
-MAX_DAYS = {"1m": 14, "3m": 30, "5m": 60, "15m": 180, "30m": 365}
+MAX_DAYS = {"1m": 14, "3m": 30, "5m": 60, "15m": 180, "30m": 365, "1h": 730, "2h": 730, "3h": 730, "4h": 730, "1d": 730}
 
 
 def _days_for(resolution: str, days: int) -> int:
@@ -247,12 +266,27 @@ def _make_strategy(name: str, params: dict):
         raise HTTPException(400, str(e))
 
 
-def _contract_value(symbol: str, engine: Engine) -> float:
+def _check_symbol(symbol: str | None, engine: Engine) -> str:
+    sym = (symbol or engine.s.symbol).upper().strip()
+    if sym != engine.s.symbol and sym not in BACKTEST_SYMBOLS:
+        raise HTTPException(400, f"symbol '{sym}' not supported for backtests; use one of {list(BACKTEST_SYMBOLS)}")
+    return sym
+
+
+async def _contract_value(symbol: str, engine: Engine) -> float:
+    """Base asset per contract (BTC 0.001, ETH 0.01, SOL 1, ...) from Delta itself, never guessed."""
     if symbol == engine.s.symbol:
         return engine.contract_value
-    if symbol not in CONTRACT_VALUES:
-        raise HTTPException(400, f"symbol '{symbol}' not supported for backtests; use {sorted({engine.s.symbol, *CONTRACT_VALUES})}")
-    return CONTRACT_VALUES[symbol]
+    if symbol not in _CONTRACT_VALUES:
+        client = DeltaClient(PROD_URL)
+        try:
+            product = await client.get_product(symbol)
+        except Exception as e:
+            raise HTTPException(502, f"could not load the {symbol} contract from Delta: {type(e).__name__}: {e}")
+        finally:
+            await client.close()
+        _CONTRACT_VALUES[symbol] = float(product["contract_value"])
+    return _CONTRACT_VALUES[symbol]
 
 
 def _downsample(curve: list, points: int = 500) -> list[dict]:
@@ -269,68 +303,86 @@ class BacktestRequest(BaseModel):
     days: int = Field(180, ge=1, le=730)
     resolution: str | None = None
     equity: float = Field(10000.0, gt=0)
+    commission_pct: float | None = Field(0.053, ge=0.0, le=5.0)
     params: dict = {}
 
 
 @router.post("/backtest")
 async def backtest(req: BacktestRequest, engine: Engine = Depends(get_engine)):
-    symbol = (req.symbol or engine.s.symbol).upper().strip()
+    symbol = _check_symbol(req.symbol, engine)
     resolution = _check_resolution(req.resolution or "1h")
     strategy = _make_strategy(req.strategy or engine.strategy.name, req.params)
     days = _days_for(resolution, req.days)
+    contract_value = await _contract_value(symbol, engine)
     df = await _history(symbol, resolution, days)
+    comm_pct = 0.053 if req.commission_pct is None else float(req.commission_pct)
+    fee_rate = comm_pct / 100.0
     result = run_backtest(df, strategy, RiskManager.from_settings(engine.s), req.equity,
-                          _contract_value(symbol, engine), resolution=resolution).to_dict()
+                          contract_value, fee_rate=fee_rate, resolution=resolution).to_dict()
     result["equity_curve"] = _downsample(result["equity_curve"])
     result["trades"] = result["trades"][-100:]
-    result.update(params=strategy.params, symbol=symbol, strategy=strategy.name, resolution=resolution, days=days)
+    result.update(params=strategy.params, symbol=symbol, strategy=strategy.name, resolution=resolution, days=days, commission_pct=comm_pct)
     return result
 
 
 class CompareRequest(BaseModel):
+    symbol: str | None = None
     resolution: str = "1h"
     days: int = Field(365, ge=30, le=730)
     equity: float = Field(10000.0, gt=0)
+    commission_pct: float = Field(0.053, ge=0.0, le=5.0)
+    params: dict[str, dict] = {}  # per strategy id, e.g. {"trend_regime": {"fast": 30}}; others use defaults
 
 
-METRIC_KEYS = ("return_pct", "trades", "win_rate_pct", "profit_factor", "avg_r", "max_drawdown_pct")
+METRIC_KEYS = ("return_pct", "buy_hold_pct", "trades", "win_rate_pct", "profit_factor", "avg_r", "max_drawdown_pct")
 
 
 @router.post("/backtest/compare")
 async def compare(req: CompareRequest, engine: Engine = Depends(get_engine)):
-    """Every strategy on the same data: first 70% (in-sample) vs last 30% (out-of-sample)."""
+    """The live strategies on the same data: first 70% (in-sample) vs last 30% (out-of-sample)."""
+    symbol = _check_symbol(req.symbol, engine)
     resolution = _check_resolution(req.resolution)
+    unknown = set(req.params) - set(LIVE_STRATEGIES)
+    if unknown:
+        raise HTTPException(400, f"params given for {sorted(unknown)}; compare runs {LIVE_STRATEGIES}")
+    strategies = {name: _make_strategy(name, req.params.get(name, {})) for name in LIVE_STRATEGIES}
     days = _days_for(resolution, req.days)
-    df = await _history(engine.s.symbol, resolution, days)
+    contract_value = await _contract_value(symbol, engine)
+    df = await _history(symbol, resolution, days)
     cut = int(len(df) * 0.7)
     rows = []
-    for name, cls in STRATEGIES.items():
-        parts = {"in_sample": df.iloc[:cut], "out_of_sample": df.iloc[max(0, cut - cls.warmup):]}
-        row = {**describe(cls)}
+    for name, strategy in strategies.items():
+        # out-of-sample gets the warmup bars before the split so its indicators start settled
+        parts = {"in_sample": df.iloc[:cut], "out_of_sample": df.iloc[max(0, cut - strategy.warmup):]}
+        row = {**describe(STRATEGIES[name]), "params": strategy.params, "custom": bool(req.params.get(name))}
         for label, part in parts.items():
-            m = run_backtest(part, cls(), RiskManager.from_settings(engine.s), req.equity,
-                             engine.contract_value, resolution=resolution).metrics
+            m = run_backtest(part, STRATEGIES[name](**strategy.params), RiskManager.from_settings(engine.s), req.equity,
+                             contract_value, fee_rate=req.commission_pct / 100.0, resolution=resolution).metrics
             row[label] = {k: m[k] for k in METRIC_KEYS}
         rows.append(row)
-    return {"symbol": engine.s.symbol, "resolution": resolution, "days": days,
-            "split_at": str(df.index[cut]), "strategies": rows}
+    return {"symbol": symbol, "resolution": resolution, "days": days, "period": f"{df.index[0]} -> {df.index[-1]}",
+            "split_at": str(df.index[cut]), "commission_pct": req.commission_pct, "strategies": rows}
 
 
 class ReplayRequest(BaseModel):
     days: int = Field(7, ge=1, le=30)
     resolution: str = "1h"
     equity: float = Field(200.0, gt=0)
+    strategy: str | None = None
 
 
 @router.post("/replay")
 async def replay(req: ReplayRequest, engine: Engine = Depends(get_engine)):
-    """A past session pushed through the live strategy + risk code, for the dashboard to play back.
+    """A past session pushed through the live or requested strategy + risk code, for the dashboard to play back.
 
     Uses the strategy's validated defaults (not demo-speed params). Extra history is loaded
     before the window so indicators are warmed up when the session starts.
     """
     resolution = _check_resolution(req.resolution)
-    cls = type(engine.strategy)
+    strat_name = req.strategy or engine.strategy.name
+    if strat_name not in STRATEGIES:
+        raise HTTPException(400, f"unknown strategy '{strat_name}'; choose from {list(STRATEGIES)}")
+    cls = STRATEGIES[strat_name]
     warm_days = math.ceil(cls.warmup * RESOLUTION_SECONDS[resolution] / 86400) + 1
     df = await _history(engine.s.symbol, resolution, _days_for(resolution, req.days + warm_days))
     strategy = cls()
